@@ -3,11 +3,16 @@
 一个能在网页里 **听你说话、用语音回答、调用工具做事、接你自己的模型密钥** 的数字人。
 前端 Live2D + 原生三件套，后端 FastAPI，四个能力接口（LLM / ASR / TTS / VLM）全部可插拔。
 
-> 状态：**M0 骨架已跑通，M1 语音链路硬化进行中**。
+> 状态：**M0 骨架已验收，M1 语音链路硬化进行中**。
 > 文字对话、语音链路（浏览器原生识别 + 语音合成）、**自动断句（说完自动发送）**、
-> 延迟仪表盘、换肤系统、工具调用与确认中心都已完成；
-> Live2D 模型加载与渲染已跑通（Cubism Core v6 + 3 个示例模型实测通过），
-> 无模型时自动降级为纯 CSS 占位形象（详见第五节与 `docs/roadmap.md`）。
+> 延迟仪表盘、换肤系统已完成；
+> Live2D 渲染已接通官方 Cubism Web Framework，无模型时降级为「空状态引导」。
+>
+> **阶段怎么划分、每个阶段怎么算做完，以 [`docs/roadmap.md`](docs/roadmap.md) 为准**
+> （M0 骨架 → M1 语音链路 → M2 形象 → M3 业务化 → M4 工程化 → M5 产品化）。
+> 那份文档同时收了**踩坑记录**（含 Live2D 渲染的 14 条）与「待拍板」事项。
+> 其中 M1 的算法层已完成，但**「真人真麦克风」的真机验证项全部未做**；
+> M0 有一处欠账（确认中心闭环，`roadmap.md` 第五节 #1）。
 
 ---
 
@@ -43,7 +48,10 @@ uv run python tools/check_env.py
 | LLM | 大脑 | 离线回声 | OpenAI / DeepSeek / 硅基流动 / 百炼 / 智谱 / Kimi / Ollama 本机 |
 | ASR | 耳朵 | 浏览器原生识别 | OpenAI Whisper / SenseVoice / 本机 faster-whisper |
 | TTS | 嗓子 | 浏览器语音合成 | OpenAI TTS / CosyVoice / 本机 Piper |
-| VLM | 眼睛 | 关闭 | GLM-4V / Qwen-VL / GPT-4o / 本机 llava |
+| VLM | 眼睛 | 关闭 | GLM-4V / Qwen-VL / GPT-4o / 本机模型（走 Ollama） |
+
+> 本机视觉**没有独立实现**（没有 llava 适配器）。要用本机视觉，走 Ollama 的 OpenAI 兼容接口。
+> ASR/TTS 的本机实现是真的（faster-whisper / piper），但需要装 `ffmpeg` 与对应 extras，见第五节。
 
 **任何说 OpenAI 协议的供应商都能插进来**（`backend/provider_registry.py` 里加一行即可），
 也可以在网页设置里选「自定义」直接填 `base_url` + 模型名。
@@ -186,25 +194,33 @@ backend/                     后端（一个 FastAPI 服务）
                              custom_modules.py 声明式自定义模块（读写与校验）
   api/                       schema.py 协议唯一事实源 · chat.py WebSocket · routes.py HTTP
   main.py                    应用装配（含开发期禁缓存静态资源）
+  log_hygiene.py             日志密钥清洗（同时挂到 uvicorn 默认日志与访问日志）
 data/
   custom_modules.json        自定义模块配置（**不含密钥**，写入时自动剔除）
+  sessions/                  会话记忆（每个 session 一个 JSON，原子落盘）
 web/                         前端三件套（原生 ES Module，无构建步骤）
-  index.html                 结构
-  styles/                    tokens.css 设计令牌 · layout.css · components.css
-                             placeholder.css 纯 CSS 占位形象 · themes/*.css 皮肤包
-  scripts/                   main.js 接线 · ui.js 渲染 · client.js 通道 · audio.js 声音
-                             lip.js 口型驱动 · themes.js 换肤 · vision.js 眼睛
+  index.html                 结构（品牌主页 + 对话台两块）
+  styles/                    tokens.css 设计令牌（全站外貌的唯一事实来源）
+                             layout.css 骨架 · components.css 组件
+                             empty-state.css 空状态（**没有模型时显示什么，不画假形象**）
+                             home.css 品牌主页 · themes/*.css 皮肤包
+  scripts/                   main.js 接线 · ui.js 渲染 · bus.js 事件总线 · config.js 配置
+                             client.js WebSocket 通道 · audio.js 声音 · vision.js 眼睛
+                             themes.js 换肤 · home.js 品牌主页
                              vad.js 自动断句（算法与浏览器解耦，可离线单测）
                              mic-worklet.js AudioWorklet 原始 PCM 采集
-                             avatar.js + live2d-framework-model.js + lip-sync.js Live2D 层
+                             avatar.js + live2d-framework-model.js + lip-sync.js + lip.js
+                               —— Live2D 层：装载 / 官方 Framework 渲染 / 口型同步 / 口型驱动
   dev/vad-lab.html           VAD 离线自检台（23 条断言，不开麦克风也能验证判定逻辑）
-  skins/                     外挂 JS 皮肤放这里（动态美化用）
+  dev/framework-model-check.html · framework-render.html   Live2D 渲染的回归验证页
+  skins/                     外挂 JS 皮肤（`*.skin.js`）—— 加载器已实现，**该目录尚未创建**
 assets/
   cubism/                    Cubism Core 放这里（专有许可，不随仓库分发）
   models/                    Live2D 模型（不进 git）
-tools/                       环境自检、Cubism Core 与示例模型下载脚本
+tools/                       环境自检 check_env.py、Cubism Core 与示例模型下载脚本
 scripts/dev.ps1              开发启动脚本
-docs/roadmap.md              里程碑 + 踩坑记录 + 待拍板事项
+docs/roadmap.md              路线图：阶段划分 + 验收标准 + 踩坑记录 + 待拍板（唯一路线图文档）
+docs/live2d-render-fixes.md  Live2D 渲染排障全过程（14 个坑）
 ```
 
 ---
@@ -228,6 +244,11 @@ docs/roadmap.md              里程碑 + 踩坑记录 + 待拍板事项
 3. **写操作必须两段式确认。**
    模型提出 → 网页弹确认卡 → 用户点头才真正执行。LLM 会自作主张，
    而删文件、发消息这类操作不可撤销。要确认的工具在注册表里标 `requires_confirm`。
+
+   > ⚠️ **这条目前只落实了一半**：模型发起的确认请求虽然会弹卡，但用户点「允许」后
+   > **工具不会被执行**（后端从不登记待处理请求，前端也不负责执行）。
+   > 唯一带确认的工具 `look_at_screen` 因此走模型调用时 100% 失效。
+   > 这是 M0 的未竟项，详见 [`docs/roadmap.md` 第五节](docs/roadmap.md)。
 
 4. **工具调用一轮最多 3 次往返。**
    没有上限时，一个绕不出来的模型会无限自我调用，账单和延迟一起爆炸。
@@ -293,10 +314,13 @@ docs/roadmap.md              里程碑 + 踩坑记录 + 待拍板事项
 - **设计令牌**：`web/styles/tokens.css` 是全站唯一外观事实来源。组件层不许出现硬编码色值。
 - **皮肤包**：`web/styles/themes/*.css`，一个文件一套皮肤，只覆盖令牌。
   复制 `_template.css` 改颜色 → 在 `scripts/themes.js` 的 `THEMES` 数组里加一条即可。
-- **热切换**：`<html data-theme="...">` + 切换 `<link>`，不刷新页面。内置 4 套：
-  `midnight`（深海午夜）/ `sakura`（樱花软糖）/ `terminal`（终端绿）/ `paper`（纸感）。
+- **热切换**：`<html data-theme="...">` + 切换 `<link>`，不刷新页面。内置 **5 套**，
+  默认 `starlight`：
+  `starlight`（星轨，默认）/ `midnight`（深海午夜）/ `sakura`（樱花软糖）/
+  `terminal`（终端绿）/ `paper`（纸感）。
 - **动效统一控制**：滑杆写 `--motion-scale`，全站过渡时长一起变；尊重系统「减少动态效果」。
-- **JS 动态美化**（你说后面会给例子）：在 `web/skins/` 放 `*.skin.js`：
+- **JS 动态美化**：在 `web/skins/` 放 `*.skin.js`（加载器与 `raf` / `listen` 自动清理已实现，
+  **但目前没有任何样例文件，`web/skins/` 目录也还没建** —— 要自己写一个再放进去）：
 
 ```js
 export default {
@@ -313,17 +337,23 @@ export default {
 };
 ```
 
-在设置 → 界面 → 外挂皮肤脚本 里填路径加载。`web/skins/example.skin.js` 有一份可运行的样例。
+在设置 → 界面 → 外挂皮肤脚本 里填路径加载（例如你自建的 `skins/my.skin.js`）。
 
 ---
 
 ## 六、Live2D 现状
 
-装载层与渲染管线已跑通（`live2d-framework-model.js` / `avatar.js` / `lip-sync.js`），
-渲染路径是**自写精简 WebGL 直用 Cubism Core 的 C API**，不依赖 pixi，也不用 CDN。
+渲染走的是**官方 Cubism Web Framework**（`web/vendor/cubism/`，已编译好的 ESM，随仓库分发），
+外层由 `live2d-framework-model.js` / `avatar.js` / `lip-sync.js` 封装。
+不依赖 pixi，也不用 CDN，**新增依赖 0、打包步骤 0**。
+
+> 历史：早期曾自写精简 WebGL 直用 Cubism Core 的 C API，反复画不出画面后放弃，
+> 改走官方 Framework 一次跑通。踩过的 14 个坑有**一页速查**（`docs/roadmap.md` 6.2 节），
+> 完整排障过程见 `docs/live2d-render-fixes.md`。
 
 实测环境：Cubism Core v6.0.1 + 3 个官方示例模型（Hiyori / Mao / whitecat），
-模型加载、贴图 UV、物理、动作、着色器全部正常加载，Canvas 像素输出已验证。
+模型加载、贴图 UV、物理、动作、表情、遮罩、着色器均正常加载，Canvas 像素输出已验证。
+**但「实机人工确认」还没做** —— 渲染是在开发机上跑通的，「稳定可看」还需真人过目一遍（属 M2）。
 
 ```powershell
 uv run python tools/fetch_cubism.py          # 从官网取 Core（需同意许可）
@@ -333,16 +363,22 @@ uv run python tools/fetch_sample_model.py    # 取官方示例模型（仅限个
 然后把模型放到 `assets/models/<名字>/`，或在网页里直接拖入模型文件夹
 （拖入后会问你要不要存进项目，存了以后就能在列表里直接选）。
 
-**没有模型时页面不会白屏**：自动降级成纯 CSS 占位形象，
-口型、情绪、呼吸起伏照常工作（`--mouth-open` / `--energy` / `--emotion` 驱动）。
+**没有模型时页面不会白屏**：自动降级为**空状态引导**（页面直接告诉你怎么把模型放进来），
+**不画假形象**。同时形象位的 CSS 变量（`--mouth-open` / `--energy` / `--emotion`）照常输出，
+所以没有模型时口型与情绪依然可被驱动。
 
-> 渲染诊断：`avatar.js` 在模型加载后的第 N 帧做一次像素检测（`#canvasHasPixels`），
-> 若无输出则自动降级为 CSS 占位。Canvas 元素上挂有 `__dhFrames`（帧计数）、
-> `__dhFps`（帧率统计）、`__dhDiag`（运行时状态）三个探针，可在控制台直接读取。
+> 渲染诊断：`avatar.js` 在模型加载后的第 N 帧做一次像素检测（`#canvasHasPixels`，
+> 底层读 `__dhVisiblePixels`），连续无输出即自动降级为空状态。
+> 控制台上可直接读这几个探针：
+> `__dhAvatar`（实例）· `canvas.__dhFrames`（帧计数）· `canvas.__dhFps`（帧率统计）·
+> `canvas.__dhDiag`（运行时状态）。
 
 ---
 
 ## 七、踩过的坑（别再踩第二次）
+
+> 这里只列**最常撞到的几条**。完整记录（运行时 11 条 + Live2D 渲染 14 条 + git/换行/代理 4 条）
+> 见 [`docs/roadmap.md` 第六节](docs/roadmap.md)，那是唯一的坑清单来源。
 
 | 坑 | 表现 | 结论 |
 |---|---|---|
@@ -352,18 +388,19 @@ uv run python tools/fetch_sample_model.py    # 取官方示例模型（仅限个
 | `MediaRecorder` 的 webm 片段 | 部分浏览器 `decodeAudioData` 解不了 | `audio.js` 有 `<audio>` 兜底路径 |
 | AudioContext 处于 suspended | 自动化环境（无人手势）里音频永远不出声、能量恒为 0 | 浏览器策略，真人点一次页面即可 |
 | 重连有次数上限 | 后端重启后网页永久失联 | 改成无限重试 + 退避封顶，且回到前台/网络恢复立即重试 |
-| 本机 `python` 命令 | 指向 Windows Store 存根，`--version` 无输出 | 一律用 `uv run python` |
 
 ---
 
 ## 八、环境事实（本机实测，勿重复试错）
+
+> 同见 [`docs/roadmap.md` 6.4 节](docs/roadmap.md)。
 
 | 项 | 状态 |
 |---|---|
 | `python` 命令 | **不可用**（Store 存根），一律 `uv run python` |
 | `uv` | 0.11.16 ✓，缓存需指向 D 盘（`UV_CACHE_DIR`，`scripts/dev.ps1` 已处理） |
 | `node` / `pnpm` | v24.16.0 ✓ |
-| `git` | ✓ |
+| `git` | ✓ 已配 SSH 免密（`~/.ssh/id_ed25519`，无口令）→ **具备非交互/定时推送能力** |
 | `ffmpeg` | ✓ 已安装（WinGet），本机 ASR/TTS 与音频后处理可用 |
 | GPU | RTX 3060 Laptop 6GB —— 能跑 faster-whisper small / Piper，**不建议**跑 7B 级别本地大模型 |
 
@@ -378,5 +415,13 @@ uv run python tools/fetch_sample_model.py    # 取官方示例模型（仅限个
 
 ## 十、接下来做什么
 
-见 `docs/roadmap.md`：M1 语音链路硬化（VAD 自动断句、真 barge-in、延迟仪表盘），
-以及五个**需要你拍板**的问题（主战场、语音走本机还是云、形象来源、视觉用途、是否多用户）。
+阶段划分、每阶段的验收标准、完整踩坑记录都在 [`docs/roadmap.md`](docs/roadmap.md)。按优先级：
+
+1. **补 M0 的欠账** —— 确认中心闭环（用户点「允许」后工具没有被执行）。
+   改动很小，但它堵着 M3 的「带副作用的工具」。
+2. **M1 收尾** —— 4 项只能在真人 + 真麦克风上验的事：自动断句、真 barge-in、
+   本机 ASR/TTS 端到端、音频格式协商下沉后端。
+3. **M4 建议穿插执行，别排到最后** —— 当前 0 测试、0 CI。
+   M1/M2 的难点全是「真机验证」，没有自动化兜底，每次改动都在赌。
+4. **五个待拍板问题** —— 主战场 / 语音走本机还是云 / 形象来源 / 视觉用途 / 是否多用户。
+   其中第 1 个卡 M3、第 3 个卡 M2，越晚定越返工。
