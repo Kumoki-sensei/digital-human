@@ -1,0 +1,40 @@
+# ============================================================
+#  换行符与文本/二进制归属
+#
+#  背景：仓库在 Windows 上开发，而 git 全局开了 core.autocrlf=true，
+#  于是每次 add/checkout 都刷一屏 "LF will be replaced by CRLF" 警告。
+#  这里显式声明规则，比依赖每个人的本地 git 配置可靠 ——
+#  协作者（含 CI、Linux 机器）克隆下来行为一致。
+# ============================================================
+
+# 默认：仓库内统一存 LF，检出时由 git 按规则处理
+* text=auto eol=lf
+
+# Windows 脚本固定 CRLF：cmd.exe / PowerShell 对 LF-only 的
+# .bat 在 goto / 多行块等场景下有解析异常的先例，不值得冒险
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# 二进制：禁止换行转换，且不参与文本 diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.bmp   binary
+*.ico   binary
+*.moc   binary
+*.moc3  binary
+*.onnx  binary
+*.bin   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.mp3   binary
+*.wav   binary
+*.mp4   binary
+
+# 第三方 vendor 代码不影响阅读：折叠 diff，避免 review 噪音
+web/vendor/** -diff
