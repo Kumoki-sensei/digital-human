@@ -1,0 +1,56 @@
+/* ============================================================
+   皮肤模板 —— 复制这个文件，改 :root 里的令牌，就是一套新皮肤
+   ============================================================
+   规则：
+     1. 只允许覆盖 tokens.css 里已经存在的变量（新增变量属于改 tokens，不属于皮肤）
+     2. 选择器必须是 :root[data-theme="你的id"]
+     3. 文件名要等于 id，例如 themes/cyber.css → data-theme="cyber"
+     4. 想加「皮肤专属的额外样式」（比如特殊字体、特殊背景纹理），
+        写在同一个文件里，选择器带上 :root[data-theme="你的id"] 前缀即可
+
+   注册皮肤：在 web/scripts/themes.js 的 THEMES 数组里加一条。
+   ============================================================ */
+
+:root[data-theme="theme-template"] {
+  /* 背景与表面 */
+  --c-bg: #0b0e17;
+  --c-bg-soft: #121728;
+  --c-surface: #161c2e;
+  --c-surface-2: #1d2540;
+  --c-border: #2a3352;
+  --c-border-soft: #202741;
+
+  /* 文字 */
+  --c-text: #e8ecf8;
+  --c-text-dim: #9aa4c4;
+  --c-text-faint: #66709a;
+
+  /* 品牌色 */
+  --c-accent: #6c8cff;
+  --c-accent-2: #a06cff;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(108, 140, 255, 0.14);
+  --c-accent-glow: rgba(108, 140, 255, 0.35);
+
+  /* 气泡 */
+  --c-user-bubble: linear-gradient(135deg, var(--c-accent), var(--c-accent-2));
+  --c-ai-bubble: var(--c-surface-2);
+  --bubble-radius: 16px;
+
+  /* 占位形象 */
+  --ph-skin: #f3d9c9;
+  --ph-hair: #3a4a7a;
+  --ph-hair-2: #26345c;
+  --ph-cloth: #2b3559;
+  --ph-blush: rgba(255, 132, 152, 0.35);
+  --ph-eye: #2c3a63;
+
+  /* 排版（非等宽皮肤建议不动） */
+  --font-ui: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+
+  /* 形状 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --bubble-radius: 16px;
+}

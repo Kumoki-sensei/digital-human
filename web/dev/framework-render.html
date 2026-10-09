@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>官方 Cubism Framework 渲染验证</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0f1420; color: #e8ecf8; overflow: hidden;
+                 font-family: system-ui, "Microsoft YaHei UI", sans-serif; }
+    #gl { display: block; width: 100vw; height: 100vh; }
+    #hud { position: fixed; left: 10px; top: 10px; z-index: 9; font: 12px/1.6 Consolas, monospace;
+           background: rgba(0,0,0,.75); padding: 10px 12px; border-radius: 8px; max-width: 700px; }
+    .ok { color: #35c88a; } .bad { color: #ff5c6c; } .warn { color: #f2b13d; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div id="hud">初始化…</div>
+
+  <script>
+    window.__t = { step: 'boot', log: [], errors: [], href: location.href };
+    window.__tlog = (s) => {
+      window.__t.log.push(s);
+      document.getElementById('hud').innerHTML = window.__t.log.join('<br>');
+    };
+    window.addEventListener('error', e => window.__t.errors.push('err: ' + (e.message || e.type)));
+    window.addEventListener('unhandledrejection', e =>
+      window.__t.errors.push('rej: ' + String(e.reason && (e.reason.message || e.reason)).slice(0, 220)));
+  </script>
+
+  <script src="/assets/cubism/live2dcubismcore.min.js?_v=9"></script>
+
+  <script type="module">
+    const T = window.__t;
+    const log = window.__tlog;
+
+    const DIR = '/assets/models/whitecat/';
+    const MOC = DIR + 'SDwhite cat free.moc3';
+    const TEX = [DIR + 'SDwhite cat free.2048/texture_00.png'];
+    const SHADER_DIR = '/vendor/cubism/Shaders/';
+
+    try {
+      // ① Core
+      T.step = 'core';
+      if (!window.Live2DCubismCore) throw new Error('Core 未加载');
+      let ver = '?';
+      try { const n = Live2DCubismCore.Version.csmGetVersion(); ver = `${(n>>>24)&255}.${(n>>>16)&255}.${n&65535}`; } catch {}
+      log(`<span class="ok">① Core</span> v${ver}`);
+
+      // ② Framework
+      T.step = 'import';
+      const fw = await import('/vendor/cubism/live2dcubismframework.js');
+      const { CubismFramework, Option, LogLevel } = fw;
+      const { CubismUserModel } = await import('/vendor/cubism/model/cubismusermodel.js');
+      const { CubismMatrix44 } = await import('/vendor/cubism/math/cubismmatrix44.js');
+      log(`<span class="ok">② Framework 导入</span>`);
+
+      // ③ 必须启动（否则 CubismIdManager 为 null → createModel 报 getId 空指针）
+      T.step = 'startup';
+      if (!CubismFramework.isStarted()) {
+        const opt = new Option();
+        opt.loggingLevel = LogLevel.LogLevel_Error;
+        CubismFramework.startUp(opt);
+        CubismFramework.initialize();
+      }
+      log(`<span class="ok">③ Framework 已启动</span>`);
+
+      // ④ WebGL（用真实画布像素尺寸）
+      T.step = 'gl';
+      const canvas = document.getElementById('gl');
+      const gl = canvas.getContext('webgl', {
+        alpha: true, premultipliedAlpha: true, antialias: true,
+        depth: false, stencil: true, preserveDrawingBuffer: true,
+      }) || canvas.getContext('experimental-webgl');
+      if (!gl) throw new Error('拿不到 WebGL');
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(innerWidth * dpr);
+      canvas.height = Math.floor(innerHeight * dpr);
+      log(`<span class="ok">④ WebGL</span> ${canvas.width}×${canvas.height}`);
+
+      // ⑤ 载入模型：**必须走 CubismUserModel.loadModel()**，不要自己 moc.createModel()。
+      // 它内部除了建模型，还会 saveParameters() 并建 _modelMatrix ——
+      // 漏掉 saveParameters() 会让逐帧的 loadParameters() 没有基准，顶点算不出来。
+      T.step = 'load';
+      const userModel = new CubismUserModel();
+      const mocBuf = await (await fetch(MOC, { cache: 'reload' })).arrayBuffer();
+      userModel.loadModel(mocBuf, false);
+      const model = userModel._model;
+      if (!model) throw new Error('loadModel 后 _model 为空');
+      log(`<span class="ok">⑤ 模型载入</span> drawables=${model.getDrawableCount()} 参数=${model.getParameterCount()} 单位=${model.getCanvasWidth()}×${model.getCanvasHeight()}`);
+
+      // ⑥ 渲染器：尺寸必须是画布真实像素
+      T.step = 'renderer';
+      userModel.createRenderer(canvas.width, canvas.height, 1);
+      const renderer = userModel.getRenderer();
+      if (!renderer) throw new Error('renderer 为空');
+      renderer.startUp(gl);
+      renderer.setIsPremultipliedAlpha(true);
+      renderer.setIsCulling(false);
+      renderer.loadShaders(SHADER_DIR);
+      log(`<span class="ok">⑥ 渲染器就绪</span>`);
+
+      // ⑦ 贴图（WebGLTexture，按索引绑定）
+      T.step = 'textures';
+      for (let i = 0; i < TEX.length; i++) {
+        const blob = await (await fetch(TEX[i], { cache: 'reload' })).blob();
+        const bmp = await createImageBitmap(blob);
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        renderer.bindTexture(i, tex);
+        log(`   贴图[${i}] ${bmp.width}×${bmp.height}`);
+      }
+      log(`<span class="ok">⑦ 贴图就绪</span>`);
+
+      // ⑧ 渲染循环（setTimeout 驱动：隐藏页面下 rAF 会被暂停）
+      T.step = 'loop';
+      const proj = new CubismMatrix44();
+      // 用官方的 _modelMatrix（把模型单位尺寸映射到 [-1,1]）
+      const mm = userModel._modelMatrix;
+      // 竖屏窗口下官方示例还要补一步宽高比缩放，否则模型会被拉伸/跑出视野：
+      //   model.getModelMatrix().setWidth(2.0) + projection.scale(h/w, 1.0)  当 w < h
+      //   projection.scale(h/w, 1.0)                                          否则
+      // 之前漏掉这一句，画布全黑 —— 不是遮罩的问题。
+      const cw = model.getCanvasWidth();
+      const chh = model.getCanvasHeight();
+      if (cw > 1.0 && canvas.width < canvas.height) {
+        if (mm) mm.setWidth(2.0);
+      }
+      T.aspect = { canvasW: canvas.width, canvasH: canvas.height, modelW: cw, modelH: chh };
+      let frames = 0;
+
+      const draw = () => {
+        setTimeout(draw, 100);
+        frames++;
+        T.frames = frames;
+        try {
+          // 官方顺序：loadParameters → （动作/表情更新）→ update
+          model.loadParameters();
+          model.update();
+
+          gl.viewport(0, 0, canvas.width, canvas.height);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+
+          proj.loadIdentity();
+          // 官方示例的做法：只有「模型逻辑宽 > 1 且画布竖屏」才补一次宽高比缩放。
+          // whitecat 的逻辑画布是 1×1，所以这里不缩放 —— 直接靠 mm 映射到 [-1,1]。
+          if (cw > 1.0 && canvas.width < canvas.height) {
+            proj.scale(canvas.height / canvas.width, 1.0);
+          }
+          if (mm) proj.multiplyByMatrix(mm);
+          renderer.setMvpMatrix(proj);
+          renderer.setRenderState(null, [0, 0, canvas.width, canvas.height]);
+          renderer.drawModel(SHADER_DIR);
+        } catch (e) {
+          if (!T.drawError) { T.drawError = String(e.message || e); T.errors.push('draw: ' + T.drawError); }
+        }
+
+        // 第 2 帧做一次全画布扫描（判定到底出没出像素）
+        if (frames === 2) {
+          try {
+            const SW = 160, SH = 90;
+            const p = document.createElement('canvas');
+            p.width = SW; p.height = SH;
+            const ctx = p.getContext('2d');
+            ctx.drawImage(canvas, 0, 0, SW, SH);
+            const d = ctx.getImageData(0, 0, SW, SH).data;
+            let maxA = 0, n = 0;
+            for (let i = 3; i < d.length; i += 4) { if (d[i] > maxA) maxA = d[i]; if (d[i] > 8) n++; }
+            T.scan = { maxAlpha: maxA, nonZero: n, sampled: SW * SH };
+            T.glError2 = gl.getError();
+          } catch (e) { T.scanErr = String(e.message || e); }
+        }
+      };
+      draw();
+
+      T.step = 'rendering';
+      window.__rendererRef = renderer;
+      window.__modelRef = model;
+      window.__glRef = gl;
+      window.__canvasRef = canvas;
+      window.__userModelRef = userModel;
+      log(`<span class="ok">⑧ 循环已启动</span>`);
+    } catch (e) {
+      T.step = 'failed:' + T.step;
+      T.errors.push(String(e && (e.stack || e.message)).slice(0, 400));
+      log(`<span class="bad">❌ ${T.step}：${e.message || e}</span>`);
+    }
+  </script>
+</body>
+</html>

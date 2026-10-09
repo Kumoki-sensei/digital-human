@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="starlight">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark light" />
+  <title>starspec · AI 数字人</title>
+
+  <!--
+    三件套分离说明（给你改装的地方）：
+      styles/tokens.css   设计令牌：颜色、间距、圆角、阴影、动效时长 —— 改这里等于改全局手感
+      styles/layout.css   骨架布局：左右分栏、抽屉、响应式断点
+      styles/components.css 组件外观：气泡、按钮、开关、卡片
+      styles/empty-state.css 空状态：没有模型时显示什么（不画假形象）
+      styles/themes/*.css 皮肤包：只覆盖令牌，一个文件=一套外观
+    换肤靠 <html data-theme="...">，无需重新加载页面。
+  -->
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/empty-state.css" />
+  <!-- 皮肤包（下面这一行由 scripts/themes.js 动态接管，静态链接只是首屏兜底） -->
+  <link rel="stylesheet" id="theme-stylesheet" href="styles/themes/starlight.css" />
+  <!-- starspec 品牌主页（打开即见的第一屏） -->
+  <link rel="stylesheet" href="styles/home.css" />
+</head>
+<body>
+  <!-- ===================== starspec 品牌主页（打开即见的第一屏） ===================== -->
+  <div class="home" id="home">
+    <div class="home__bg" aria-hidden="true">
+      <span class="home__orb home__orb--a"></span>
+      <span class="home__orb home__orb--b"></span>
+      <span class="home__grid"></span>
+    </div>
+
+    <div class="home__inner">
+      <div class="home__brand">
+        <svg class="home__mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path d="M24 5c2.1 9 5.1 13 14.5 14.5C29.1 21 26.1 25 24 34c-2.1-9-5.1-13-14.5-14.5C18.9 18 21.9 14 24 5z" fill="currentColor" />
+          <circle cx="24" cy="19.5" r="3" fill="var(--c-surface)" />
+        </svg>
+        <span class="home__word"><em>star</em>spec</span>
+      </div>
+
+      <p class="home__eyebrow">STARSPEC · AI DIGITAL HUMAN</p>
+
+      <h1 class="home__title">
+        会听、会说，<br />
+        <b>还能替你做事。</b>
+      </h1>
+
+      <p class="home__sub">
+        starspec 是一个能听你说话、用语音作答、调用工具完成任务的 AI 数字人 ——
+        声音、模型、形象全部可配置，默认无需任何密钥即可开聊。
+      </p>
+
+      <div class="home__feats">
+        <div class="home__feat">
+          <span class="home__feat__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" stroke-linecap="round" />
+            </svg>
+          </span>
+          <h3>会听、会说</h3>
+          <p>浏览器原生识别，说完自动断句、逐句作答，不用一直按着开关。</p>
+        </div>
+
+        <div class="home__feat">
+          <span class="home__feat__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <rect x="3" y="3" width="8" height="8" rx="2" />
+              <rect x="13" y="3" width="8" height="8" rx="2" />
+              <rect x="3" y="13" width="8" height="8" rx="2" />
+              <rect x="13" y="13" width="8" height="8" rx="2" />
+            </svg>
+          </span>
+          <h3>四项能力，全可插拔</h3>
+          <p>听 / 说 / 看 / 做 各自独立可换，你自己的 API 填一份 JSON 就能接进来。</p>
+        </div>
+
+        <div class="home__feat">
+          <span class="home__feat__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z" stroke-linejoin="round" />
+              <path d="M18 14l.9 2.4L21 17.3l-2.1.9L18 20.6l-.9-2.4L15 17.3l2.1-.9z" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <h3>形象与皮肤，随你定</h3>
+          <p>Live2D 形象 + 明亮 / 深夜多套皮肤，想换就换，界面整体统一。</p>
+        </div>
+      </div>
+
+      <div class="home__cta">
+        <button id="btn-enter" class="home__enter" type="button">
+          开始对话
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 12h16M14 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <span class="home__hint">进入后可在右上角 设置 → 界面 里更换皮肤、配置模型</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="app" id="app">
+
+    <!-- ===================== 左：舞台 ===================== -->
+    <main class="stage" id="stage">
+      <div class="stage__backdrop" aria-hidden="true">
+        <span class="stage__glow"></span>
+        <span class="stage__grid"></span>
+      </div>
+
+      <!-- Live2D 画布；没有 Core / 模型时，下面那块 .avatar-empty 空状态引导会显示 -->
+      <div class="avatar" id="avatar-container">
+        <canvas id="live2d-canvas" class="avatar__canvas"></canvas>
+
+        <!-- 纯 CSS 占位形象：不依赖任何模型文件，保证「今天就能看见东西」 -->
+        <!--
+          空状态：没有模型时**不画假形象**，而是明确告诉用户该做什么。
+          早先这里是一个纯 CSS 画的扁平卡通头像 —— 那是在用假东西糊弄人：
+          既看不出问题在哪，也不知道下一步该做什么。
+        -->
+        <div class="avatar-empty" id="avatar-empty" role="status">
+          <div class="avatar-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="3" y="4" width="18" height="14" rx="2" />
+              <circle cx="9" cy="10" r="1.6" />
+              <circle cx="15" cy="10" r="1.6" />
+              <path d="M9.5 14.2c.8.7 1.7 1 2.5 1s1.7-.3 2.5-1" stroke-linecap="round" />
+              <path d="M12 20.5v2M8 22.5h8" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="avatar-empty__title">请把模型文件放进来</div>
+          <div class="avatar-empty__detail">
+            把 Live2D 模型文件夹<b>拖到这块区域</b>，或在 <b>设置 → 形象</b> 里点「选择文件夹」导入。
+          </div>
+          <button class="ghost-btn" id="btn-empty-import">选择模型文件夹…</button>
+          <div class="avatar-empty__tech" id="avatar-empty-tech" hidden></div>
+        </div>
+      </div>
+
+        <div class="stage__overlay">
+          <div class="statusbar" id="statusbar">
+            <span class="status-dot" id="status-dot" data-state="idle"></span>
+            <span class="statusbar__text" id="status-text">未连接</span>
+            <button class="statusbar__latency" id="latency" title="点开看这一轮的三段耗时分解">—</button>
+          </div>
+          <div class="stage__actions">
+            <button class="icon-btn" id="btn-theme" title="换肤">🎨</button>
+            <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+          </div>
+        </div>
+
+        <!-- 延迟分解面板：调优时唯一能告诉你「该换哪个模型」的东西 -->
+        <div class="latency-panel" id="latency-panel" hidden></div>
+      </main>
+
+    <!-- ===================== 右：对话 ===================== -->
+    <section class="panel" id="panel">
+      <header class="panel__head">
+        <div class="panel__title">
+          <span class="brand-chip" id="brand-chip" title="starspec">
+            <svg class="brand-chip__mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <path d="M24 5c2.1 9 5.1 13 14.5 14.5C29.1 21 26.1 25 24 34c-2.1-9-5.1-13-14.5-14.5C18.9 18 21.9 14 24 5z" fill="currentColor" />
+              <circle cx="24" cy="19.5" r="3" fill="var(--c-surface)" />
+            </svg>
+            <span class="brand-chip__word"><em>star</em>spec</span>
+          </span>
+          <h1 id="persona-title">数字人</h1>
+          <span class="badge" id="mode-badge">语音模式</span>
+        </div>
+        <div class="panel__tools">
+          <button class="ghost-btn" id="btn-reset" title="清空记忆">清空记忆</button>
+        </div>
+      </header>
+
+      <div class="chat" id="chat" aria-live="polite">
+        <div class="chat__hint" id="chat-hint">
+          点右下角麦克风开始说话，或直接打字。首次使用请先在 ⚙ 设置里选模型。
+        </div>
+      </div>
+
+      <!-- 待确认的写操作（确认中心）会插到这里 -->
+      <div class="confirm-area" id="confirm-area"></div>
+
+      <footer class="composer">
+        <button class="mic-btn" id="btn-mic" title="按住说话">
+          <span class="mic-btn__ring"></span>
+          <span class="mic-btn__icon">🎙</span>
+        </button>
+        <textarea id="input" class="composer__input" rows="1"
+                  placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button class="send-btn" id="btn-send" title="发送">发送</button>
+        <button class="stop-btn" id="btn-stop" title="打断" hidden>停</button>
+      </footer>
+    </section>
+
+    <!-- ===================== 设置侧栏（停靠式，不遮挡舞台） ===================== -->
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer__inner">
+        <!-- 左边缘：拖动改宽度 -->
+        <div class="drawer__resizer" id="drawer-resizer" title="拖动调整宽度"
+             role="separator" aria-orientation="vertical" aria-label="拖动调整设置栏宽度"></div>
+
+        <header class="drawer__head">
+          <h2>设置</h2>
+          <button class="icon-btn" id="btn-close-drawer" title="关闭">✕</button>
+        </header>
+
+        <div class="drawer__cols">
+          <!-- ---------- 左：分类导航 ---------- -->
+          <nav class="drawer__nav" id="drawer-nav" aria-label="设置分类">
+            <input id="settings-search" type="search" placeholder="搜索设置…"
+                   autocomplete="off" aria-label="搜索设置" />
+
+            <div class="drawer__navlist" id="drawer-navlist">
+              <button class="nav-item is-active" data-pane="models"
+                      data-title="模型"
+                      data-desc="为每项能力单独配供应商与密钥；留空即用服务端配置。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
+                  <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" stroke-linecap="round" />
+                </svg>
+                <span class="nav-item__label">模型</span>
+              </button>
+
+              <button class="nav-item" data-pane="modules"
+                      data-title="模块"
+                      data-desc="谁都可以换：预设模块改注册表，自己的 API 填一份 JSON。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <rect x="3" y="3" width="8" height="8" rx="2" />
+                  <rect x="13" y="3" width="8" height="8" rx="2" />
+                  <rect x="3" y="13" width="8" height="8" rx="2" />
+                  <rect x="13" y="13" width="8" height="8" rx="2" />
+                </svg>
+                <span class="nav-item__label">模块</span>
+              </button>
+
+              <button class="nav-item" data-pane="avatar"
+                      data-title="形象"
+                      data-desc="语音采集、Live2D 模型与表现强度 —— 调的时候舞台上就能看见。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" stroke-linecap="round" />
+                </svg>
+                <span class="nav-item__label">形象</span>
+              </button>
+
+              <button class="nav-item" data-pane="theme"
+                      data-title="界面"
+                      data-desc="皮肤、动效强度与气泡显示。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <path d="M12 3.5s5.5 5.6 5.5 9.5a5.5 5.5 0 1 1-11 0C6.5 9.1 12 3.5 12 3.5z" stroke-linejoin="round" />
+                </svg>
+                <span class="nav-item__label">界面</span>
+              </button>
+
+              <button class="nav-item" data-pane="persona"
+                      data-title="人格"
+                      data-desc="她是谁 —— 名字与说话方式。留空即中性默认。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <path d="M12 20s-7-4.4-7-9.2A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7 2.8C19 15.6 12 20 12 20z" stroke-linejoin="round" />
+                </svg>
+                <span class="nav-item__label">人格</span>
+              </button>
+
+              <button class="nav-item" data-pane="advanced"
+                      data-title="高级"
+                      data-desc="能力清单、会话管理与诊断。">
+                <svg class="nav-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <path d="M4 8h16M4 16h16" stroke-linecap="round" />
+                  <circle cx="9" cy="8" r="2.2" />
+                  <circle cx="15" cy="16" r="2.2" />
+                </svg>
+                <span class="nav-item__label">高级</span>
+              </button>
+            </div>
+          </nav>
+
+          <!-- ---------- 右：当前分类的内容 ---------- -->
+          <div class="drawer__main" id="drawer-main">
+            <div class="drawer__panehead">
+              <div>
+                <h3 id="pane-title">模型</h3>
+                <p class="note" id="pane-desc"></p>
+              </div>
+              <span class="save-state" id="save-state" data-state="idle">改完自动保存</span>
+            </div>
+
+            <div class="drawer__body">
+              <!-- ---------- 模型 ---------- -->
+              <section class="tabpane is-active" data-pane="models">
+                <p class="note">
+                  默认走「服务端兜底配置」。这里填的密钥<b>只存在你的浏览器</b>，通过连接参数传给后端、
+                  用完即弃，不写文件也不进数据库。
+                  <span id="key-warning" class="warn"></span>
+                </p>
+
+                <div class="cred-card" data-cap="llm">
+                  <button class="cred-card__head" type="button" aria-expanded="true" aria-controls="cred-body-llm">
+                    <span class="cred-card__title">
+                      <svg class="cred-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <rect x="7" y="7" width="10" height="10" rx="2" />
+                        <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" stroke-linecap="round" />
+                      </svg>
+                      <span class="cred-card__name">大脑 · LLM</span>
+                    </span>
+                    <span class="cred-card__meta">
+                      <span class="cred-state" data-state-for="llm"></span>
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </span>
+                  </button>
+                  <div class="cred-card__body" id="cred-body-llm">
+                    <label>供应商<select data-field="provider"></select></label>
+                    <label>模型<input data-field="model" placeholder="留空用默认" /></label>
+                    <label>API Key<input data-field="key" type="password" placeholder="sk-..." autocomplete="off" /></label>
+                    <details class="adv">
+                      <summary>高级 · 接口地址</summary>
+                      <label>接口地址<input data-field="base_url" placeholder="留空用供应商默认" /></label>
+                    </details>
+                  </div>
+                </div>
+
+                <div class="cred-card is-collapsed" data-cap="asr">
+                  <button class="cred-card__head" type="button" aria-expanded="false" aria-controls="cred-body-asr">
+                    <span class="cred-card__title">
+                      <svg class="cred-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+                        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" stroke-linecap="round" />
+                      </svg>
+                      <span class="cred-card__name">耳朵 · ASR（语音识别）</span>
+                    </span>
+                    <span class="cred-card__meta">
+                      <span class="cred-state" data-state-for="asr"></span>
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </span>
+                  </button>
+                  <div class="cred-card__body" id="cred-body-asr">
+                    <label>供应商<select data-field="provider"></select></label>
+                    <label>模型<input data-field="model" placeholder="留空用默认" /></label>
+                    <label>API Key<input data-field="key" type="password" placeholder="sk-..." autocomplete="off" /></label>
+                    <details class="adv">
+                      <summary>高级 · 接口地址</summary>
+                      <label>接口地址<input data-field="base_url" placeholder="留空用供应商默认" /></label>
+                    </details>
+                  </div>
+                </div>
+
+                <div class="cred-card is-collapsed" data-cap="tts">
+                  <button class="cred-card__head" type="button" aria-expanded="false" aria-controls="cred-body-tts">
+                    <span class="cred-card__title">
+                      <svg class="cred-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <path d="M4 9h3l4-3v12l-4-3H4z" stroke-linejoin="round" />
+                        <path d="M15.5 9a4 4 0 0 1 0 6" stroke-linecap="round" />
+                      </svg>
+                      <span class="cred-card__name">嗓子 · TTS（语音合成）</span>
+                    </span>
+                    <span class="cred-card__meta">
+                      <span class="cred-state" data-state-for="tts"></span>
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </span>
+                  </button>
+                  <div class="cred-card__body" id="cred-body-tts">
+                    <label>供应商<select data-field="provider"></select></label>
+                    <label>模型<input data-field="model" placeholder="留空用默认" /></label>
+                    <label>音色<input data-field="voice" placeholder="如 alloy / zh-CN-XiaoxiaoNeural" /></label>
+                    <label>API Key<input data-field="key" type="password" placeholder="sk-..." autocomplete="off" /></label>
+                    <details class="adv">
+                      <summary>高级 · 接口地址</summary>
+                      <label>接口地址<input data-field="base_url" placeholder="留空用供应商默认" /></label>
+                    </details>
+                  </div>
+                </div>
+
+                <div class="cred-card is-collapsed" data-cap="vlm">
+                  <button class="cred-card__head" type="button" aria-expanded="false" aria-controls="cred-body-vlm">
+                    <span class="cred-card__title">
+                      <svg class="cred-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" stroke-linejoin="round" />
+                        <circle cx="12" cy="12" r="2.6" />
+                      </svg>
+                      <span class="cred-card__name">眼睛 · 视觉（VLM）</span>
+                    </span>
+                    <span class="cred-card__meta">
+                      <span class="cred-state" data-state-for="vlm"></span>
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </span>
+                  </button>
+                  <div class="cred-card__body" id="cred-body-vlm">
+                    <label>供应商<select data-field="provider"></select></label>
+                    <label>模型<input data-field="model" placeholder="留空用默认" /></label>
+                    <label>API Key<input data-field="key" type="password" placeholder="sk-..." autocomplete="off" /></label>
+                    <details class="adv">
+                      <summary>高级 · 接口地址</summary>
+                      <label>接口地址<input data-field="base_url" placeholder="留空用供应商默认" /></label>
+                    </details>
+                  </div>
+                </div>
+
+                <button class="primary-btn" id="btn-test">测试连接</button>
+                <pre class="log-box" id="test-log" hidden></pre>
+              </section>
+
+              <!-- ---------- 模块：只读视图 + 接入向导，分成两段 ---------- -->
+              <section class="tabpane" data-pane="modules">
+                <p class="note">
+                  「你看到的每个模块都能换」：预设模块改注册表即可；想接自己的 API 不必改代码，
+                  填一份 JSON（接口地址 + 请求怎么摆 + 响应怎么取）就能用。
+                </p>
+
+                <!-- 第一段：只读 -->
+                <div class="subsec" data-subsec="arch">
+                  <button class="subsec__head" type="button" aria-expanded="true" aria-controls="subsec-body-arch">
+                    <span class="subsec__title">架构与模块清单</span>
+                    <span class="subsec__hint">只读</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div class="subsec__body" id="subsec-body-arch">
+                    <h3>分层结构</h3>
+                    <div id="arch-layers" class="arch-layers"><p class="note">正在读取…</p></div>
+
+                    <h3>能力契约（实现任意一个能力时必须遵守的数据形状）</h3>
+                    <div id="arch-contracts" class="tool-list"></div>
+
+                    <h3>模块清单</h3>
+                    <div id="module-list" class="tool-list"></div>
+                  </div>
+                </div>
+
+                <!-- 第二段：接入向导 -->
+                <div class="subsec is-collapsed" data-subsec="connect">
+                  <button class="subsec__head" type="button" aria-expanded="false" aria-controls="subsec-body-connect">
+                    <span class="subsec__title">接入我自己的 API</span>
+                    <span class="subsec__hint">3 步</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div class="subsec__body" id="subsec-body-connect">
+                    <div class="step">
+                      <span class="step__no">1</span>
+                      <div class="step__main">
+                        <div class="step__title">选能力</div>
+                        <label>能力
+                          <select id="cm-cap">
+                            <option value="llm">llm · 大脑</option>
+                            <option value="asr">asr · 耳朵</option>
+                            <option value="tts">tts · 嗓子</option>
+                            <option value="vlm">vlm · 眼睛</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="step">
+                      <span class="step__no">2</span>
+                      <div class="step__main">
+                        <div class="step__title">填模块配置</div>
+                        <p class="note">
+                          密钥<b>不要</b>写在 JSON 里（写入时会被自动剔除）—— 保存后到「模型」页对应能力卡片里单填。
+                        </p>
+                        <label>模块配置（JSON）
+                          <textarea id="cm-json" rows="12" spellcheck="false"></textarea>
+                        </label>
+                        <label>密钥（仅用于本次探测，不保存）
+                          <input id="cm-key" type="password" placeholder="sk-... 可留空" autocomplete="off" />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="step">
+                      <span class="step__no">3</span>
+                      <div class="step__main">
+                        <div class="step__title">探测并保存</div>
+                        <div class="row">
+                          <button class="ghost-btn" id="btn-cm-template">填入模板</button>
+                          <button class="ghost-btn" id="btn-cm-probe">探测连通性</button>
+                          <button class="primary-btn" id="btn-cm-save">保存模块</button>
+                        </div>
+                        <pre class="log-box" id="cm-result" hidden></pre>
+                        <div id="cm-saved" class="session-list"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- ---------- 形象 ---------- -->
+              <section class="tabpane" data-pane="avatar">
+                <h3>语音采集</h3>
+                <label class="switch"><input type="checkbox" id="chk-auto-vad" checked /><span>自动断句（说完自动发送，不用再点麦克风）</span></label>
+                <div class="vad-meter">
+                  <canvas id="vad-canvas" class="vad-meter__canvas"></canvas>
+                  <div class="vad-meter__info" id="vad-info" data-state="idle">未监听</div>
+                </div>
+                <label class="range">灵敏度（阈值倍数） <input type="range" id="rng-vad-threshold" min="1.5" max="8" step="0.1" value="3.2" /></label>
+                <label class="range">说完判定时长 <input type="range" id="rng-vad-silence" min="400" max="2500" step="50" value="900" /></label>
+                <p class="note">
+                  自动断句用 AudioWorklet 取原始采样、按能量判定句尾：静音持续到设定时长就认为你说完了。
+                  环境嘈杂时调低灵敏度、拉长判定时长。
+                </p>
+
+                <div class="row">
+                  <label class="switch"><input type="checkbox" id="chk-lipsync" checked /><span>口型同步</span></label>
+                  <label class="switch"><input type="checkbox" id="chk-lookat" checked /><span>视线跟随鼠标</span></label>
+                  <label class="switch"><input type="checkbox" id="chk-blink" checked /><span>自动眨眼</span></label>
+                </div>
+
+                <h3>Live2D 模型</h3>
+                <div id="model-list" class="model-list"><p class="note">正在探测…</p></div>
+
+                <h3>导入模型</h3>
+                <p class="note">
+                  把你的模型文件夹拖进来，或点下面的按钮选择。<b>支持一次导入多个模型</b>（各自成目录）；
+                  也同时支持两种格式：<code>*.model3.json</code>（Cubism 3/4/5）与
+                  <code>*.model.json</code>（Cubism 2 旧版）。
+                </p>
+                <label class="drop-zone" id="drop-zone">
+                  <input type="file" id="model-files" webkitdirectory directory multiple hidden />
+                  <input type="file" id="model-dir-pick" webkitdirectory directory multiple hidden />
+                  <span id="drop-zone-text">把模型文件夹拖到这里</span>
+                </label>
+                <div class="row">
+                  <button class="ghost-btn" id="btn-pick-model">选择文件夹…</button>
+                  <button class="ghost-btn" id="btn-import-local" hidden>只在本页试用（不落盘）</button>
+                </div>
+                <div id="import-progress" class="import-progress" hidden>
+                  <div class="import-progress__bar"><i id="import-progress-fill"></i></div>
+                  <div class="import-progress__text" id="import-progress-text"></div>
+                </div>
+                <pre class="log-box" id="import-result" hidden></pre>
+
+                <h3>表现强度</h3>
+                <label class="range">口型幅度 <input type="range" id="rng-mouth" min="0.2" max="2.5" step="0.1" value="1.3" /></label>
+                <label class="range">情绪幅度 <input type="range" id="rng-emotion" min="0" max="1.5" step="0.1" value="0.9" /></label>
+
+                <!-- 排查问题才看的东西，默认收起来 -->
+                <div class="subsec is-collapsed" data-subsec="runtime">
+                  <button class="subsec__head" type="button" aria-expanded="false" aria-controls="subsec-body-runtime">
+                    <span class="subsec__title">运行时检查</span>
+                    <span class="subsec__hint">诊断</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div class="subsec__body" id="subsec-body-runtime">
+                    <pre class="log-box" id="runtime-box">…</pre>
+                  </div>
+                </div>
+              </section>
+
+              <!-- ---------- 界面 ---------- -->
+              <section class="tabpane" data-pane="theme">
+                <h3>皮肤</h3>
+                <div class="theme-grid" id="theme-grid"></div>
+
+                <h3>动效强度</h3>
+                <label class="range">呼吸/流动效果 <input type="range" id="rng-motion" min="0" max="2" step="0.1" value="1" /></label>
+                <label class="switch"><input type="checkbox" id="chk-reduce-motion" /><span>减少动效（省电/防眩晕）</span></label>
+
+                <h3>气泡</h3>
+                <label class="switch"><input type="checkbox" id="chk-typewriter" checked /><span>打字机效果</span></label>
+                <label class="switch"><input type="checkbox" id="chk-show-tools" checked /><span>显示工具调用过程</span></label>
+                <label class="range">气泡字号 <input type="range" id="rng-fontsize" min="12" max="20" step="1" value="15" /></label>
+
+                <h3>外挂皮肤脚本</h3>
+                <p class="note">
+                  在 <code>web/skins/</code> 放一个 <code>*.skin.js</code>，导出 <code>export default { id, name, onMount(ctx), onUnmount(ctx) }</code>，
+                  即可用 JS 做动态美化（粒子、视差、跟随鼠标的光斑）。点下面按钮加载。
+                </p>
+                <input id="skin-url" placeholder="skins/example.skin.js" />
+                <button class="ghost-btn" id="btn-load-skin">加载皮肤脚本</button>
+                <button class="ghost-btn" id="btn-unload-skin">卸载</button>
+              </section>
+
+              <!-- ---------- 人格 ---------- -->
+              <section class="tabpane" data-pane="persona">
+                <p class="note">
+                  <b>默认不设定人格。</b>两栏都留空时，她只遵守一套中性行为规则
+                  （说话简短、不编造、不假装做过事），不预设名字与性格 ——
+                  这样交付给谁，就由谁自己决定「她是谁」。
+                </p>
+
+                <label>名字（留空 = 不设定）
+                  <input id="persona-name" data-field="persona_name" placeholder="例如：小满、Alfred、前台助理…" />
+                </label>
+                <label>性格与说话方式（留空 = 中性默认；会原样拼进系统提示词）
+                  <textarea id="persona-style" rows="8" data-field="persona_style"
+                    placeholder="例如：说话慢一点，喜欢用比喻；被问到不确定的事会先说不知道，再给一个可验证的建议。"></textarea>
+                </label>
+                <p class="note">
+                  名字留空时她不会自己编名字 —— 被问到会如实说还没设定。
+                  这份设定会随每一轮对话发送，改完点下面的按钮即可生效。
+                </p>
+
+                <h3>语音播报</h3>
+                <label class="switch"><input type="checkbox" id="chk-autoplay" /><span><b>自动播放语音</b>（默认关闭，开了它会自己出声）</span></label>
+                <p class="note">
+                  默认<b>静音</b>：界面只显示文字，不会突然说话。想听它说就把上面勾上 ——
+                  改完立刻生效，也可以随时用页面上的「停」按钮打断。
+                </p>
+                <label class="switch"><input type="checkbox" id="chk-speak" checked /><span>语音模式（按句边说边播，而非整段说完再播）</span></label>
+                <button class="ghost-btn" id="btn-save-persona">保存并重开会话</button>
+              </section>
+
+              <!-- ---------- 高级 ---------- -->
+              <section class="tabpane" data-pane="advanced">
+                <h3>能力清单</h3>
+                <div id="tool-list" class="tool-list"><p class="note">正在读取…</p></div>
+
+                <h3>会话</h3>
+                <div id="session-list" class="session-list"></div>
+
+                <h3>诊断</h3>
+                <button class="ghost-btn" id="btn-diag">输出诊断信息到控制台</button>
+                <pre class="log-box" id="diag-box" hidden></pre>
+                <p class="note">协议文档：<a href="/api/config/protocol" target="_blank">/api/config/protocol</a> ·
+                  接口自测：<a href="/docs" target="_blank">/docs</a></p>
+              </section>
+            </div>
+
+            <!-- 搜索结果：搜索时顶掉正文显示 -->
+            <div class="search-results" id="search-results" hidden></div>
+
+            <footer class="drawer__foot">
+              <p class="note">密钥只在建立连接时读取一次，改完点「重连后端」才生效。</p>
+              <div class="drawer__footrow">
+                <button class="ghost-btn" id="btn-reset-settings">恢复默认</button>
+                <button class="primary-btn" id="btn-reconnect">重连后端</button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="scrim" id="scrim" hidden></div>
+  </div>
+
+  <div class="toast-host" id="toast-host"></div>
+
+  <!-- ES Module 入口。不需要打包器：浏览器原生支持 -->
+  <script type="module" src="scripts/main.js"></script>
+</body>
+</html>

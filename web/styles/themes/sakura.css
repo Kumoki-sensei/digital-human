@@ -1,0 +1,42 @@
+/* ============================================================
+   皮肤：sakura —— 樱花淡粉，柔和圆润，气泡更大更软
+   ============================================================ */
+
+:root[data-theme="sakura"] {
+  --c-bg: #fff6f8;
+  --c-bg-soft: #fff0f4;
+  --c-surface: #ffffff;
+  --c-surface-2: #ffe6ee;
+  --c-border: #f2c6d5;
+  --c-border-soft: #f8dde6;
+
+  --c-text: #4a2b36;
+  --c-text-dim: #8b6373;
+  --c-text-faint: #b394a0;
+
+  --c-accent: #ff6f9c;
+  --c-accent-2: #ff9f7a;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(255, 111, 156, 0.14);
+  --c-accent-glow: rgba(255, 111, 156, 0.38);
+
+  --c-ok: #2fb47f;
+  --c-warn: #e0912b;
+  --c-danger: #e64a63;
+
+  --c-user-bubble: linear-gradient(135deg, #ff6f9c, #ff9f7a);
+  --c-ai-bubble: #ffffff;
+  --c-ai-ink: #4a2b36;
+  --bubble-radius: 20px;
+
+  --ph-skin: #ffe6da;
+  --ph-hair: #ffc2d4;
+  --ph-hair-2: #ff9ebb;
+  --ph-cloth: #ffe1ea;
+  --ph-blush: rgba(255, 132, 152, 0.5);
+  --ph-eye: #7a4a5c;
+
+  --shadow-1: 0 2px 10px rgba(196, 120, 150, 0.16);
+  --shadow-2: 0 10px 30px rgba(196, 120, 150, 0.22);
+  --shadow-glow: 0 0 20px rgba(255, 111, 156, 0.3);
+}

@@ -1,0 +1,108 @@
+/* ============================================================
+   空状态：没有模型时显示什么
+   ------------------------------------------------------------
+   这里刻意**不画任何虚拟形象**。
+
+   早先这个位置是一个纯 CSS 画的扁平卡通头像，理由是「保证今天就能看见东西」。
+   但那个理由站不住：用户看到一个人形轮廓，会以为形象已经就位，
+   既不知道它其实只是个占位图，也不知道该怎么换成真的。
+   一个假东西比一片空白更糟 —— 空白至少会让人去找原因。
+
+   现在改成：说明「缺什么」+ 给出「下一步动作」+ 一个直接可点的按钮。
+   技术原因（cubism-core-missing 之类）折叠在最后一行，排查时用得上，平时不吓人。
+   ============================================================ */
+
+.avatar-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  text-align: center;
+  z-index: 3;
+  /* 虚线框：一眼看出这是一块「等你放东西」的区域，而不是渲染失败的残骸 */
+  margin: var(--sp-5);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--c-surface) 40%, transparent);
+  transition: border-color var(--dur-base), background var(--dur-base);
+}
+
+/* ============================================================
+   形象容器与画布的基础布局
+   ------------------------------------------------------------
+   ⚠ 这几条必须留在这里。
+
+   它们原先写在 placeholder.css 里（那个文件承载「占位形象 + 容器尺寸」两件事）。
+   删掉 placeholder.css 时，我漏了把尺寸规则搬过来 —— 于是 .avatar 的宽高解析成 0×0，
+   canvas 的 clientWidth/Height 也是 0，avatar.js 的 #syncSize() 判定 sizeOk=false
+   就整帧跳过绘制。表现是「模型加载成功、GL 无错误、但画面一片空白」，
+   而且空状态还写着「模型已载入，但画面没画出来」，把排查方向引到渲染管线上。
+
+   一句话：**容器的尺寸是这个项目里最容易漏掉、又最致命的一条 CSS。**
+   ============================================================ */
+
+.avatar {
+  position: relative;
+  width: min(78%, 560px);
+  height: 82%;
+  display: grid;
+  place-items: end center;   /* 形象贴底居中，符合角色站立的观感 */
+  z-index: 2;
+}
+
+.avatar__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 有模型时整个空状态让位；没模型时画布让位给空状态 */
+.avatar[data-mode="live2d"] .avatar-empty { display: none; }
+.avatar[data-mode="live2d"] .avatar__canvas { display: block; }
+.avatar[data-mode="empty"] .avatar__canvas { display: none; }
+.avatar[data-mode="empty"] .avatar-empty { display: flex; }
+
+.avatar-empty__icon {
+  color: var(--c-text-faint);
+  opacity: 0.7;
+  display: grid;
+  place-items: center;
+}
+
+.avatar-empty__title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.avatar-empty__detail {
+  max-width: 34em;
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--c-text-dim);
+}
+.avatar-empty__detail b { color: var(--c-accent); font-weight: 600; }
+
+.avatar-empty__tech {
+  max-width: 34em;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-text-faint);
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+/* 拖拽经过时整块高亮：让「这里能放东西」这件事变得可感知 */
+.avatar-empty.is-over,
+.stage.is-over .avatar-empty {
+  border-color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+.avatar-empty.is-over .avatar-empty__title { color: var(--c-accent); }

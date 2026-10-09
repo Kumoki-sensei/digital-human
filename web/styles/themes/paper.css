@@ -1,0 +1,52 @@
+/* ============================================================
+   皮肤：paper —— 纸感浅色。米黄底、墨黑字、细描边
+   长时间阅读最舒服的一套；也用来验证「令牌够不够全」
+   （浅色皮肤一旦有硬编码深色，立刻就会露馅）。
+   ============================================================ */
+
+:root[data-theme="paper"] {
+  --c-bg: #f6f3ea;
+  --c-bg-soft: #fbf9f3;
+  --c-surface: #ffffff;
+  --c-surface-2: #efeade;
+  --c-border: #d9d2c1;
+  --c-border-soft: #e7e1d3;
+
+  --c-text: #2c2a26;
+  --c-text-dim: #6b6558;
+  --c-text-faint: #9a9384;
+
+  --c-accent: #b4552d;
+  --c-accent-2: #c98a2e;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(180, 85, 45, 0.12);
+  --c-accent-glow: rgba(180, 85, 45, 0.28);
+
+  --c-ok: #3f7d4e;
+  --c-warn: #b4802d;
+  --c-danger: #b5352d;
+  --c-info: #2f6d8c;
+
+  --c-user-bubble: linear-gradient(135deg, #b4552d, #c98a2e);
+  --c-ai-bubble: #ffffff;
+  --c-ai-ink: #2c2a26;
+  --bubble-radius: 10px;
+
+  --ph-skin: #f6e0cf;
+  --ph-hair: #6b5a44;
+  --ph-hair-2: #4a3d2d;
+  --ph-cloth: #d9cdb8;
+  --ph-blush: rgba(200, 110, 100, 0.28);
+  --ph-eye: #4a4234;
+
+  --shadow-1: 0 1px 4px rgba(80, 70, 50, 0.12);
+  --shadow-2: 0 8px 24px rgba(80, 70, 50, 0.16);
+  --shadow-glow: 0 0 16px rgba(180, 85, 45, 0.22);
+}
+
+/* 纸感专属：淡淡的纸纹 */
+:root[data-theme="paper"] .stage__grid {
+  background-image:
+    linear-gradient(to right, rgba(120, 105, 80, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(120, 105, 80, 0.07) 1px, transparent 1px);
+}

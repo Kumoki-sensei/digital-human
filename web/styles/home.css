@@ -1,0 +1,200 @@
+/* ============================================================
+   主页（starspec 品牌引导页）
+   ------------------------------------------------------------
+   打开即见的第一屏：品牌标志 + 标语 + 三个能力亮点 + 进入按钮。
+   全部走设计令牌（--c-* / --sp-* / --dur-*），所以它天然跟随
+   当前皮肤切换 —— 选了深色皮肤，主页也一起跟着变，品牌统一。
+   ============================================================ */
+
+.home {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--c-bg);
+  padding: var(--sp-6);
+  transition: opacity var(--dur-slow) var(--ease-out),
+              transform var(--dur-slow) var(--ease-out),
+              visibility 0s linear var(--dur-slow);
+}
+
+/* 背景氛围：双光晕 + 柔和网格，跟随皮肤但整体保持轻盈 */
+.home__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.home__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+}
+.home__orb--a {
+  left: -8%; top: -12%;
+  width: 46vw; height: 46vw;
+  background: radial-gradient(circle, var(--c-accent-soft), transparent 68%);
+  animation: homeFloat 22s var(--ease-in-out) infinite alternate;
+}
+.home__orb--b {
+  right: -10%; bottom: -16%;
+  width: 52vw; height: 52vw;
+  background: radial-gradient(circle, var(--c-accent-2) 0%, transparent 58%);
+  opacity: 0.3;
+  animation: homeFloat 26s var(--ease-in-out) infinite alternate-reverse;
+}
+.home__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--c-border-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--c-border-soft) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: calc(0.5 * var(--motion-scale, 1));
+  mask-image: radial-gradient(ellipse 75% 62% at 50% 44%, #000 10%, transparent 82%);
+}
+
+.home__inner {
+  position: relative;
+  width: min(960px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+/* 品牌标志 */
+.home__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border: var(--border-w) solid var(--c-border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--c-surface) 78%, transparent);
+  box-shadow: var(--shadow-1);
+}
+.home__mark { width: 30px; height: 30px; color: var(--c-accent); }
+.home__word {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--c-text);
+}
+.home__word em {
+  font-style: normal;
+  color: var(--c-accent);
+}
+
+/* 口号 */
+.home__eyebrow {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-text-faint);
+}
+.home__title {
+  margin: 0;
+  font-size: clamp(34px, 5.4vw, 58px);
+  font-weight: 750;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+  max-width: 18em;
+}
+.home__title b { color: var(--c-accent); font-weight: inherit; }
+.home__sub {
+  margin: 0;
+  max-width: 46em;
+  font-size: var(--fs-lg);
+  line-height: 1.75;
+  color: var(--c-text-dim);
+}
+
+/* 能力亮点 */
+.home__feats {
+  margin-top: var(--sp-2);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+  width: 100%;
+}
+.home__feat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  text-align: left;
+  border: var(--border-w) solid var(--c-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--c-surface) 70%, transparent);
+  box-shadow: var(--ring-highlight);
+  backdrop-filter: blur(6px);
+  transition: border-color var(--dur-fast), transform var(--dur-fast), box-shadow var(--dur-fast);
+}
+.home__feat:hover {
+  border-color: var(--c-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.home__feat__icon {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+.home__feat__icon svg { width: 22px; height: 22px; }
+.home__feat h3 { margin: 0; font-size: var(--fs-base); color: var(--c-text); }
+.home__feat p { margin: 0; font-size: var(--fs-sm); line-height: 1.7; color: var(--c-text-dim); }
+
+/* 进入按钮 */
+.home__cta { margin-top: var(--sp-5); display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); }
+.home__enter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 14px 34px;
+  font-size: var(--fs-base);
+  font-weight: 650;
+  color: var(--c-accent-ink);
+  background: linear-gradient(135deg, var(--c-accent), var(--c-accent-2));
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  box-shadow: 0 10px 26px var(--c-accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease-spring);
+}
+.home__enter:hover { transform: translateY(-2px); box-shadow: 0 16px 34px var(--c-accent-glow); }
+.home__enter:active { transform: translateY(0) scale(0.98); }
+.home__enter svg { width: 18px; height: 18px; }
+.home__hint { font-size: var(--fs-xs); color: var(--c-text-faint); }
+
+/* 离开动画（进入控制台时平滑淡出） */
+.home.is-leaving {
+  opacity: 0;
+  transform: scale(1.03);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+@media (max-width: 760px) {
+  .home { padding: var(--sp-5); }
+  .home__feats { grid-template-columns: 1fr; }
+  .home__sub { font-size: var(--fs-base); }
+}
+
+/* 尊重「减少动态效果」 */
+@media (prefers-reduced-motion: reduce) {
+  .home__orb, .home__grid { animation: none; }
+}
+
+@keyframes homeFloat {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(3%, -3%) scale(1.12); }
+}

@@ -1,0 +1,68 @@
+/* ============================================================
+   皮肤：terminal —— 终端绿，等宽字体，直角，扫描线
+   代码感强，适合调试时用；也是「JS 动态美化」的天然试验场。
+   ============================================================ */
+
+:root[data-theme="terminal"] {
+  --c-bg: #050a06;
+  --c-bg-soft: #07110a;
+  --c-surface: #0a1710;
+  --c-surface-2: #0e2016;
+  --c-border: #1d4a2e;
+  --c-border-soft: #12301e;
+
+  --c-text: #b9ffcf;
+  --c-text-dim: #6fd48f;
+  --c-text-faint: #3f8a5c;
+
+  --c-accent: #2bff88;
+  --c-accent-2: #00d5ff;
+  --c-accent-ink: #04120a;
+  --c-accent-soft: rgba(43, 255, 136, 0.13);
+  --c-accent-glow: rgba(43, 255, 136, 0.45);
+
+  --c-ok: #2bff88;
+  --c-warn: #ffd166;
+  --c-danger: #ff5c6c;
+  --c-info: #00d5ff;
+
+  --c-user-bubble: linear-gradient(135deg, #1f9d5a, #00b0a0);
+  --c-user-ink: #03170d;
+  --c-ai-bubble: #0e2016;
+  --c-ai-ink: #b9ffcf;
+  --bubble-radius: 4px;
+
+  --font-ui: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI", monospace;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-pill: 4px;
+
+  --ph-skin: #7fffc0;
+  --ph-hair: #137a48;
+  --ph-hair-2: #0b4a2b;
+  --ph-cloth: #0f5c37;
+  --ph-blush: rgba(43, 255, 136, 0.25);
+  --ph-eye: #04120a;
+}
+
+/* 皮肤专属：扫描线与闪烁光标，纯 CSS 不需要 JS */
+:root[data-theme="terminal"] .stage__backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(43, 255, 136, 0.045) 0 1px,
+    transparent 1px 3px
+  );
+  pointer-events: none;
+}
+
+:root[data-theme="terminal"] .panel__title h1::after {
+  content: "_";
+  animation: blink 1.05s steps(1) infinite;
+}
+
+@keyframes blink { 50% { opacity: 0; } }

@@ -1,0 +1,123 @@
+/* ============================================================
+   设计令牌（Design Tokens）
+   ------------------------------------------------------------
+   这是全站唯一的「外观事实来源」。所有颜色/间距/圆角/阴影/时长
+   都从这里取值，组件层不许出现硬编码色值 —— 否则换肤一定漏。
+
+   想快速改风格？只动这个文件就能改 70% 的观感。
+   想另做一套皮肤？复制 styles/themes/_template.css，只覆盖需要的令牌。
+   ============================================================ */
+
+:root {
+  /* ---------- 色彩：基础灰阶（皮肤包会覆盖） ---------- */
+  --c-bg: #0b0e17;
+  --c-bg-soft: #121728;
+  --c-surface: #161c2e;
+  --c-surface-2: #1d2540;
+  --c-border: #2a3352;
+  --c-border-soft: #202741;
+
+  --c-text: #e8ecf8;
+  --c-text-dim: #9aa4c4;
+  --c-text-faint: #66709a;
+
+  /* ---------- 色彩：品牌与语义 ---------- */
+  --c-accent: #6c8cff;
+  --c-accent-2: #a06cff;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(108, 140, 255, 0.14);
+  --c-accent-glow: rgba(108, 140, 255, 0.35);
+
+  --c-ok: #35c88a;
+  --c-warn: #f2b13d;
+  --c-danger: #ff5c6c;
+  --c-info: #45b6ff;
+
+  /* ---------- 对话气泡 ---------- */
+  --c-user-bubble: linear-gradient(135deg, var(--c-accent), var(--c-accent-2));
+  --c-user-ink: #ffffff;
+  --c-ai-bubble: var(--c-surface-2);
+  --c-ai-ink: var(--c-text);
+  --bubble-radius: 16px;
+
+  /* ---------- 形象占位（无 Live2D 时） ---------- */
+  --ph-skin: #f3d9c9;
+  --ph-hair: #3a4a7a;
+  --ph-hair-2: #26345c;
+  --ph-cloth: #2b3559;
+  --ph-blush: rgba(255, 132, 152, 0.35);
+  --ph-eye: #2c3a63;
+
+  /* ---------- 排版 ----------
+     starspec 视觉语言：重视觉层级 + 字重/字距调控，而非单纯靠字号大喊。
+     字体走「离线条」系统栈（macOS 先 SF / PingFang，Win11 先 Segoe UI Variable，
+     Windows 中文回落微软雅黑 / 思源黑体）。不引外部字体，保证离线可用。 */
+  --font-ui: "SF Pro Display", "SF Pro Text", -apple-system,
+             "Segoe UI Variable Display", "Segoe UI",
+             "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC",
+             system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+  --lh-tight: 1.18;
+  --lh-base: 1.65;
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.02em;
+  --tracking-caps: 0.12em;
+
+  /* ---------- 间距与形状 ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-pill: 999px;
+
+  --border-w: 1px;
+
+  /* 表面质感：色相符的柔和阴影 + 1px 内高光（双边框 / 立体触感），
+     阴影始终带背景色相，绝不用生硬纯黑。单一圆角体系全站统一。 */
+  --ring-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-1: 0 2px 8px rgba(4, 8, 20, 0.30), var(--ring-highlight);
+  --shadow-2: 0 16px 40px rgba(4, 8, 20, 0.42), var(--ring-highlight);
+  --shadow-glow: 0 0 24px var(--c-accent-glow);
+
+  /* ---------- 动效（--motion-scale 由「动效强度」滑杆控制） ---------- */
+  --motion-scale: 1;
+  --dur-fast: calc(120ms * var(--motion-scale));
+  --dur-base: calc(220ms * var(--motion-scale));
+  --dur-slow: calc(420ms * var(--motion-scale));
+
+  /* 缓动统一用「物理感」贝塞尔，杜绝 linear / ease-in-out 的僵硬过渡。
+     --ease-out  普通入场/展开，先快后慢带轻微出射感
+     --ease-spring 强调反馈的微动效（按钮按压、浮层） */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ---------- 布局 ---------- */
+  /* --drawer-w 会被 JS 覆盖（拖拽调宽后存进 ui.drawerW） */
+  --panel-w: 460px;
+  --drawer-w: 640px;
+  --drawer-w-min: 460px;
+  --nav-w: 168px;
+  --stage-min: 320px;
+
+  /* ---------- 形象实时状态（由 JS 写入，CSS 只读） ---------- */
+  --mouth-open: 0;
+  --energy: 0;
+  --eye-open: 1;
+}

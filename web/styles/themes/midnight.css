@@ -1,0 +1,33 @@
+/* ============================================================
+   皮肤：midnight —— 默认。深夜蓝紫，霓虹点缀，低饱和背景
+   适合长时间盯着看：亮部集中在内容上，背景压得很暗。
+   ============================================================ */
+
+:root[data-theme="midnight"] {
+  --c-bg: #0a0d16;
+  --c-bg-soft: #111629;
+  --c-surface: #171d31;
+  --c-surface-2: #1e2742;
+  --c-border: #2b3557;
+  --c-border-soft: #1f2742;
+
+  --c-text: #e9edfb;
+  --c-text-dim: #98a3c6;
+  --c-text-faint: #616b93;
+
+  --c-accent: #6c8cff;
+  --c-accent-2: #a86cff;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(108, 140, 255, 0.15);
+  --c-accent-glow: rgba(108, 140, 255, 0.42);
+
+  --c-user-bubble: linear-gradient(135deg, #6c8cff, #a86cff);
+  --c-ai-bubble: #1e2742;
+
+  --ph-skin: #f4dccb;
+  --ph-hair: #3d4d80;
+  --ph-hair-2: #26325c;
+  --ph-cloth: #2c3760;
+  --ph-blush: rgba(255, 128, 150, 0.32);
+  --ph-eye: #2b3a66;
+}

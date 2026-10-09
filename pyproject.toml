@@ -1,0 +1,28 @@
+[project]
+name = "digital-human"
+version = "0.1.0"
+description = "实时数字人：能听 / 能说 / 能做 / 能聊（Live2D 前端 + 多供应商后端）"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "websockets>=13.0",
+    "numpy>=1.26",
+]
+
+# 本地模型（按需安装，不装也能跑：默认走云 API / 浏览器原生能力）
+[project.optional-dependencies]
+local-asr = ["faster-whisper>=1.1"]          # 本机语音识别（需 ffmpeg 做解码，见 README）
+local-tts = ["piper-tts>=1.2"]               # 本机语音合成（轻量、实时）
+local-vision = ["opencv-python>=4.10", "pillow>=10.0"]
+dev = ["pytest>=8.0", "ruff>=0.7"]
+
+[tool.uv]
+cache-dir = ".uvcache"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

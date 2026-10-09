@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+  <meta charset="UTF-8" />
+  <title>VAD 实验台 · 数字人</title>
+  <link rel="stylesheet" href="../styles/tokens.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/themes/midnight.css" />
+  <style>
+    body {
+      margin: 0; padding: 24px;
+      background: var(--c-bg); color: var(--c-text);
+      font-family: var(--font-ui); font-size: var(--fs-base);
+      max-width: 900px;
+    }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    h2 { font-size: 14px; color: var(--c-text-dim); margin: 22px 0 8px; }
+    .muted { color: var(--c-text-faint); font-size: var(--fs-sm); line-height: 1.7; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+    .panel {
+      border: 1px solid var(--c-border); border-radius: var(--radius-md);
+      padding: 14px; background: var(--c-surface); margin-top: 10px;
+    }
+    pre {
+      font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap;
+      background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;
+      max-height: 260px; overflow: auto; margin: 8px 0 0;
+    }
+    .pill { font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: 99px;
+      border: 1px solid var(--c-border); }
+    .ok { color: var(--c-ok); } .bad { color: var(--c-danger); } .warn { color: var(--c-warn); }
+    canvas { width: 100%; height: 120px; background: rgba(0,0,0,0.35); border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>VAD 实验台</h1>
+  <p class="muted">
+    用来离线验证「自动断句」的判定逻辑：不碰麦克风，用合成语音喂给检测器，
+    看它能不能正确切出一句完整的语音。<br />
+    这类算法靠"对着麦克风喊两句"是没法验证的 —— 所以必须能离线跑。
+  </p>
+
+  <div class="panel">
+    <div class="row">
+      <button class="primary-btn" id="run-tests">运行全部自检</button>
+      <button class="ghost-btn" id="run-trace">跑一段合成语音并画出来</button>
+      <span class="pill" id="summary">未运行</span>
+    </div>
+    <pre id="out">点上面的按钮开始。</pre>
+  </div>
+
+  <h2>合成语音的能量与判定</h2>
+  <div class="panel">
+    <canvas id="canvas"></canvas>
+    <div class="muted" id="trace-info">—</div>
+  </div>
+
+  <script type="module">
+    import { VAD, VAD_EVENT, frameRms, encodeWav } from '../scripts/vad.js';
+
+    const out = document.getElementById('out');
+    const summary = document.getElementById('summary');
+    const lines = [];
+    let pass = 0, fail = 0;
+
+    function check(name, cond, detail = '') {
+      if (cond) { pass++; lines.push(`  ✓ ${name}`); }
+      else { fail++; lines.push(`  ✗ ${name}${detail ? ' —— ' + detail : ''}`); }
+    }
+
+    /** 造一段语音：语音段用带包络的正弦（模拟人声基频），静音段给近似 0 的底噪 */
+    function makeSpeech({ sr = 48000, frameMs = 10.66, segments = [] } = {}) {
+      const frameLen = Math.round((sr * frameMs) / 1000);
+      const frames = [];
+      for (const seg of segments) {
+        const nFrames = Math.round(seg.ms / frameMs);
+        for (let f = 0; f < nFrames; f++) {
+          const buf = new Float32Array(frameLen);
+          for (let i = 0; i < frameLen; i++) {
+            const t = (f * frameLen + i) / sr;
+            if (seg.speech) {
+              // 220Hz 基频 + 包络，幅度 0.25 左右接近正常说话
+              const env = 0.6 + 0.4 * Math.sin(2 * Math.PI * 4 * t);
+              buf[i] = Math.sin(2 * Math.PI * 220 * t) * 0.25 * env;
+            } else {
+              buf[i] = (Math.random() - 0.5) * 0.006;  // 微底噪
+            }
+          }
+          frames.push(buf);
+        }
+      }
+      return frames;
+    }
+
+    function drive(frames, opts = {}) {
+      const vad = new VAD(opts);
+      const events = [];
+      let speechFrames = 0;
+      vad.onUtterance = (info) => events.push({ type: 'utterance', ...info, speechFrames });
+      for (const f of frames) {
+        const ev = vad.push(f, opts.frameMs || 10.66);
+        if (ev === VAD_EVENT.SPEECH_START) speechFrames = 0;
+        if (ev === VAD_EVENT.SPEECH || ev === VAD_EVENT.SPEECH_START) speechFrames++;
+        if (ev === VAD_EVENT.TOO_SHORT) events.push({ type: 'too-short' });
+        if (ev === VAD_EVENT.TOO_LONG) events.push({ type: 'too-long' });
+      }
+      return { vad, events };
+    }
+
+    async function runTests() {
+      lines.length = 0; pass = 0; fail = 0;
+
+      lines.push('【1】正常一句话：0.4s 静音 + 1.5s 语音 + 1.2s 静音');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 400, speech: false }, { ms: 1500, speech: true }, { ms: 1200, speech: false },
+        ]});
+        const { events } = drive(frames);
+        const utt = events.filter(e => e.type === 'utterance');
+        check('切出恰好 1 句', utt.length === 1, `实得 ${utt.length}`);
+        if (utt[0]) {
+          // 注意：utterance 的 durationMs 是「从开口到判定结束」，**含尾部那 0.9s 静音判定窗**
+          // （1.5s 语音 + ~0.9s 静音 ≈ 2.4s）。这不是误差，是设计如此 ——
+          // 那 0.9s 就是"他是不是说完了"的观察成本。写测试时别按纯语音长度去卡上限。
+          check('时长在 1.4~2.5s 之间（含尾部静音判定窗）',
+                utt[0].durationMs >= 1400 && utt[0].durationMs <= 2500,
+                `实得 ${Math.round(utt[0].durationMs)}ms`);
+          check('收尾原因是静音', utt[0].reason === 'silence', `实得 ${utt[0].reason}`);
+        }
+      }
+
+      lines.push('【2】连续两句话中间短暂停顿（0.5s < silenceMs=0.9s）应合成一句');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 300, speech: false }, { ms: 900, speech: true }, { ms: 500, speech: false },
+          { ms: 900, speech: true }, { ms: 1200, speech: false },
+        ]});
+        const { events } = drive(frames);
+        const utt = events.filter(e => e.type === 'utterance');
+        check('合并为 1 句（停顿不够长不算断句）', utt.length === 1, `实得 ${utt.length}`);
+      }
+
+      lines.push('【3】两句话之间有 1.5s 长停顿，应切成两句');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 300, speech: false }, { ms: 800, speech: true }, { ms: 1500, speech: false },
+          { ms: 800, speech: true }, { ms: 1200, speech: false },
+        ]});
+        const { events } = drive(frames);
+        const utt = events.filter(e => e.type === 'utterance');
+        check('切成 2 句', utt.length === 2, `实得 ${utt.length}`);
+      }
+
+      lines.push('【4】短促噪声（0.1s 爆音）应被丢弃');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 500, speech: false }, { ms: 100, speech: true }, { ms: 2000, speech: false },
+        ]});
+        const { events } = drive(frames);
+        const utt = events.filter(e => e.type === 'utterance');
+        check('没有产出语音段', utt.length === 0, `实得 ${utt.length}`);
+      }
+
+      lines.push('【5】纯静音不应触发任何语音段');
+      {
+        const frames = makeSpeech({ segments: [{ ms: 3000, speech: false }] });
+        const { events } = drive(frames);
+        check('零语音段', events.filter(e => e.type === 'utterance').length === 0);
+      }
+
+      lines.push('【6】超长语音（20s）应被强制收尾');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 300, speech: false }, { ms: 20000, speech: true },
+        ]});
+        const { events } = drive(frames);
+        const long = events.filter(e => e.type === 'too-long' || e.type === 'utterance');
+        check('触发了强制收尾', long.length >= 1, `实得 ${long.length}`);
+        check('收尾原因是 max-duration',
+              events.some(e => e.reason === 'max-duration'), JSON.stringify(events.map(e => e.reason)));
+      }
+
+      lines.push('【7】噪声底自适应：高底噪环境下仍能正确判定');
+      {
+        // 底噪抬高到 0.02（约 -34dB，像开着风扇的房间），语音 0.25 仍应被检出
+        const sr = 48000, frameMs = 10.66, frameLen = Math.round((sr * frameMs) / 1000);
+        const frames = [];
+        const push = (ms, speech) => {
+          const n = Math.round(ms / frameMs);
+          for (let f = 0; f < n; f++) {
+            const b = new Float32Array(frameLen);
+            for (let i = 0; i < frameLen; i++) {
+              const t = (f * frameLen + i) / sr;
+              b[i] = speech
+                ? Math.sin(2 * Math.PI * 220 * t) * 0.25
+                : (Math.random() - 0.5) * 0.04;   // 明显底噪
+            }
+            frames.push(b);
+          }
+        };
+        push(1500, false); push(1200, true); push(1500, false);
+        const { events, vad } = drive(frames);
+        check('仍切出 1 句', events.filter(e => e.type === 'utterance').length === 1,
+              `实得 ${events.filter(e => e.type === 'utterance').length}，噪声底=${vad.noise.toFixed(4)}`);
+      }
+
+      lines.push('【8】WAV 编码器');
+      {
+        const sr = 16000;
+        const a = new Float32Array([0, 1, -1, 0.5]);
+        const b = new Float32Array([-0.5, 0, 0, 0]);
+        const blob = encodeWav([a, b], sr);
+        check('总字节数 = 44 + (4+4)×2', blob.size === 44 + 16,
+              `实得 ${blob.size}`);
+        check('MIME 是 audio/wav', blob.type === 'audio/wav', blob.type);
+        const buf = await blob.arrayBuffer();
+        const dv = new DataView(buf);
+        const riff = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+        check('RIFF 头正确', riff === 'RIFF', riff);
+        check('采样率写入正确', dv.getUint32(24, true) === sr, String(dv.getUint32(24, true)));
+        check('位深 16', dv.getUint16(34, true) === 16, String(dv.getUint16(34, true)));
+        check('data 长度正确', dv.getUint32(40, true) === 16, String(dv.getUint32(40, true)));
+        check('第一个采样 0', dv.getInt16(44, true) === 0, String(dv.getInt16(44, true)));
+        check('1.0 编码为 32767', dv.getInt16(46, true) === 32767, String(dv.getInt16(46, true)));
+        check('-1.0 编码为 -32768', dv.getInt16(48, true) === -32768, String(dv.getInt16(48, true)));
+      }
+
+      lines.push('【9】抑制开关：数字人正在说话时，VAD 不应把声音当成用户输入');
+      {
+        const frames = makeSpeech({ segments: [
+          { ms: 300, speech: false }, { ms: 1500, speech: true }, { ms: 1200, speech: false },
+        ]});
+        const vad = new VAD();
+        vad.suppressed = () => true;          // 模拟「扬声器正在播放」
+        const events = [];
+        vad.onUtterance = (i) => events.push(i);
+        const counts = {};
+        for (const f of frames) {
+          const ev = vad.push(f, 10.66);
+          counts[ev] = (counts[ev] || 0) + 1;
+        }
+        check('全程没有产出语音段', events.length === 0, `实得 ${events.length}`);
+        check('全部判定为静音', (counts['silence'] || 0) === frames.length,
+              JSON.stringify(counts));
+      }
+
+      lines.push('【10】抑制解除后应恢复正常判定');
+      {
+        // 场景：先被抑制一段（数字人在说话），中途解除，然后用户开口
+        const sr = 48000, frameMs = 10.66, fl = Math.round((sr * frameMs) / 1000);
+        const frames = [];
+        const pushFrames = (ms, speech) => {
+          for (let f = 0; f < Math.round(ms / frameMs); f++) {
+            const b = new Float32Array(fl);
+            for (let i = 0; i < fl; i++) {
+              const t = (f * fl + i) / sr;
+              b[i] = speech ? Math.sin(2 * Math.PI * 220 * t) * 0.25 : (Math.random() - 0.5) * 0.006;
+            }
+            frames.push(b);
+          }
+        };
+        pushFrames(1200, false);   // 抑制期间（近似人声电平）
+        pushFrames(1500, true);    // 用户开口
+        pushFrames(1200, false);   // 收尾
+
+        const vad = new VAD();
+        let mute = true;
+        vad.suppressed = () => mute;
+        const events = [];
+        vad.onUtterance = (i) => events.push(i);
+        for (let i = 0; i < frames.length; i++) {
+          if (i === Math.round(1200 / frameMs)) mute = false;   // 解除抑制
+          vad.push(frames[i], frameMs);
+        }
+        check('解除后切出 1 句', events.length === 1, `实得 ${events.length}`);
+        check('噪声底未被抑制期间的语音抬高（阈值仍合理）',
+              vad.noise < 0.05, `noise=${vad.noise.toFixed(4)} thr=${vad.threshold.toFixed(4)}`);
+      }
+
+      lines.push(`\n结果：${pass} 通过 / ${fail} 失败`);      out.textContent = lines.join('\n');
+      summary.textContent = fail === 0 ? `全部通过（${pass}）` : `${fail} 项失败`;
+      summary.className = 'pill ' + (fail === 0 ? 'ok' : 'bad');
+    }
+
+    function runTrace() {
+      const frameMs = 10.66;
+      const frames = makeSpeech({ segments: [
+        { ms: 400, speech: false }, { ms: 1200, speech: true },
+        { ms: 1400, speech: false }, { ms: 900, speech: true },
+        { ms: 1200, speech: false },
+      ]});
+      const vad = new VAD();
+      const marks = [];
+      const levels = [];
+      let n = 0;
+      for (const f of frames) {
+        const ev = vad.push(f, frameMs);
+        levels.push({ rms: frameRms(f), thr: vad.threshold, speech: ev === 'speech' || ev === 'start' });
+        if (ev === VAD_EVENT.SPEECH_START) marks.push({ frame: n, kind: 'start' });
+        if (ev === VAD_EVENT.SPEECH_END) marks.push({ frame: n, kind: 'end' });
+        if (ev === VAD_EVENT.TOO_SHORT) marks.push({ frame: n, kind: 'short' });
+        n++;
+      }
+
+      const c = document.getElementById('canvas');
+      const dpr = Math.min(devicePixelRatio || 1, 3);
+      c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+      const ctx = c.getContext('2d');
+      const W = c.width, H = c.height;
+      ctx.clearRect(0, 0, W, H);
+      const stepX = W / Math.max(1, levels.length - 1);
+      const scale = (v) => H - Math.min(1, v / 0.4) * H;
+
+      // 阈值线
+      ctx.strokeStyle = 'rgba(242,177,61,0.75)';
+      ctx.beginPath();
+      levels.forEach((l, i) => { const y = scale(l.thr); i ? ctx.lineTo(i * stepX, y) : ctx.moveTo(0, y); });
+      ctx.stroke();
+
+      // 能量线
+      ctx.strokeStyle = 'rgba(108,140,255,0.95)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      levels.forEach((l, i) => { const y = scale(l.rms); i ? ctx.lineTo(i * stepX, y) : ctx.moveTo(0, y); });
+      ctx.stroke();
+
+      // 判定标记
+      for (const m of marks) {
+        const x = m.frame * stepX;
+        ctx.strokeStyle = m.kind === 'start' ? 'rgba(53,200,138,0.95)'
+          : m.kind === 'end' ? 'rgba(255,92,108,0.95)' : 'rgba(242,177,61,0.95)';
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+
+      document.getElementById('trace-info').textContent =
+        `共 ${levels.length} 帧｜绿线=说话开始，红线=一句结束，橙线=噪声丢弃｜`
+        + `最终噪声底 ${vad.noise.toFixed(5)}，阈值 ${vad.threshold.toFixed(5)}`
+        + `｜标记：${marks.map(m => `${m.kind}@${m.frame}`).join('  ') || '无'}`;
+    }
+
+    document.getElementById('run-tests').addEventListener('click', async () => {
+      try { await runTests(); } catch (e) { out.textContent = '自检崩了：' + (e.stack || e.message); }
+    });
+    document.getElementById('run-trace').addEventListener('click', () => {
+      try { runTrace(); } catch (e) { document.getElementById('trace-info').textContent = '崩了：' + e.message; }
+    });
+
+    // 打开就自动跑一遍，省得你还要点一次
+    runTests();
+    runTrace();
+  </script>
+</body>
+</html>

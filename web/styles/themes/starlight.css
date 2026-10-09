@@ -1,0 +1,45 @@
+/* ============================================================
+   皮肤：starlight —— starspec 默认。明亮轻盈、干净现代
+   冷白底 + 靛紫品牌色，细分隔线、柔和阴影，适合长时间阅读。
+   想回到沉静深色，在 设置 → 界面 → 皮肤 里切回其他皮肤即可。
+   ============================================================ */
+
+:root[data-theme="starlight"] {
+  --c-bg: #f6f7fc;
+  --c-bg-soft: #edf0f9;
+  --c-surface: #ffffff;
+  --c-surface-2: #e9edfa;
+  --c-border: #d7dcee;
+  --c-border-soft: #e4e8f5;
+
+  --c-text: #1b1f35;
+  --c-text-dim: #5b6484;
+  --c-text-faint: #8b93b5;
+
+  --c-accent: #5a6cff;
+  --c-accent-2: #9b5cff;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: rgba(90, 108, 255, 0.12);
+  --c-accent-glow: rgba(90, 108, 255, 0.32);
+
+  --c-ok: #12a06e;
+  --c-warn: #c57f1b;
+  --c-danger: #e0495c;
+  --c-info: #0f86d6;
+
+  --c-user-bubble: linear-gradient(135deg, #5a6cff, #9b5cff);
+  --c-ai-bubble: #ffffff;
+  --c-ai-ink: #1b1f35;
+
+  --ph-skin: #ffe3d6;
+  --ph-hair: #7a8cff;
+  --ph-hair-2: #5a6cff;
+  --ph-cloth: #e6eaff;
+  --ph-blush: rgba(255, 122, 148, 0.45);
+  --ph-eye: #5a6cff;
+
+  --ring-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --shadow-1: 0 2px 10px rgba(27, 33, 74, 0.08), var(--ring-highlight);
+  --shadow-2: 0 18px 44px rgba(27, 33, 74, 0.14), var(--ring-highlight);
+  --shadow-glow: 0 8px 28px rgba(90, 108, 255, 0.30);
+}

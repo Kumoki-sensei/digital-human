@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Framework 渲染器验证</title>
+<style>
+  body { margin: 0; background: #0b1020; color: #cfe; font: 13px/1.6 Consolas, monospace; }
+  #log { position: fixed; left: 0; top: 0; width: 46%; height: 100%; overflow: auto; padding: 10px; box-sizing: border-box; }
+  #stage { position: fixed; right: 0; top: 0; width: 54%; height: 100%; display: grid; place-items: center; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .ok { color: #4ade80; } .bad { color: #f87171; } .warn { color: #fbbf24; }
+</style>
+</head>
+<body>
+<pre id="log"></pre>
+<div id="stage"><canvas id="c"></canvas></div>
+<script type="module">
+const logEl = document.getElementById('log');
+const T = { step: 'boot', errors: [], api: {} };
+window.__t = T;
+
+function log(html) { logEl.insertAdjacentHTML('beforeend', html + '<br>'); logEl.scrollTop = logEl.scrollHeight; }
+function ok(s) { log('<span class="ok">✓ ' + s + '</span>'); }
+function bad(s) { log('<span class="bad">✗ ' + s + '</span>'); T.errors.push(s); }
+function warn(s) { log('<span class="warn">! ' + s + '</span>'); }
+
+// 探针：某个对象上有没有这些方法（含原型链，很多方法在父类上）
+function probe(label, obj, names) {
+  const missing = names.filter((n) => {
+    let o = obj;
+    while (o) {
+      if (typeof o[n] === 'function') return false;
+      o = Object.getPrototypeOf(o);
+    }
+    return true;
+  });
+  T.api[label] = { missing };
+  if (missing.length) bad(`${label} 缺少方法: ${missing.join(', ')}`);
+  else ok(`${label} 方法齐全 (${names.length})`);
+  return missing.length === 0;
+}
+
+// 列出某个类（含原型链）上所有方法名，用来找出真实命名
+function dump(label, obj, filter) {
+  const names = new Set();
+  let o = obj;
+  while (o && o !== Object.prototype) {
+    for (const n of Object.getOwnPropertyNames(o)) {
+      if (typeof o[n] === 'function' && (!filter || filter.test(n))) names.add(n);
+    }
+    o = Object.getPrototypeOf(o);
+  }
+  T.api[label] = [...names].sort();
+  log(`· ${label}: ${T.api[label].join(', ')}`);
+}
+
+function safeGet(s) {
+  const out = {};
+  const call = (key, fn) => {
+    try { out[key] = fn(); } catch (e) { out[key] = 'ERR:' + String(e && e.message || e).slice(0, 40); }
+  };
+  call('moc', () => s.getMocFileName());
+  call('texCount', () => s.getTextureCount());
+  call('tex0', () => s.getTextureFileName(0));
+  call('physics', () => s.getPhysicsFileName());
+  call('pose', () => s.getPoseFileName());
+  call('exprCount', () => s.getExpressionCount());
+  call('expr0', () => s.getExpressionName(0));
+  call('exprFile0', () => s.getExpressionFileName(0));
+  call('motionGroups', () => s.getMotionGroupCount());
+  return out;
+}
+
+try {
+  const MOD = await import('/scripts/live2d-framework-model.js');
+  ok('新渲染器模块导入成功');
+
+  // ① 装配 Framework
+  T.step = 'framework';
+  const loader = new MOD.FrameworkLive2DLoader();
+  const coreOk = await loader.ensureCore();
+  if (coreOk) ok('Cubism Core + Framework 装配成功');
+  else { bad('Framework 装配失败'); throw new Error('framework not ready'); }
+
+  // ② 检查我调用的官方 API 到底存不存在
+  T.step = 'api';
+  const F = await MOD.ensureFramework();
+  probe('CubismFramework', F.fw.CubismFramework, ['startUp', 'initialize', 'getIdManager']);
+  probe('CubismUserModel', F.CubismUserModel.prototype, [
+    'loadModel', 'loadExpression', 'loadMotion', 'createRenderer', 'getRenderer', 'release',
+  ]);
+  probe('CubismBreath', F.CubismBreath.prototype, ['setParameters', 'getParameters', 'updateParameters']);
+  T.api.breathParamDataType = typeof F.BreathParameterData;
+  T.api.poseCreate = typeof F.CubismPose?.create;
+  T.api.physicsCreate = typeof F.CubismPhysics?.create;
+  if (T.api.breathParamDataType !== 'function') bad('BreathParameterData 不是构造函数');
+  else ok('BreathParameterData 可用');
+
+  // ③ 真的加载并渲染 whitecat
+  T.step = 'load';
+  const canvas = document.getElementById('c');
+  // 画布尺寸故意开小一点（800×900）：先验证管线通不通，再谈清晰度。
+  // 大 canvas + 82 个部件的遮罩离屏渲染会把 GPU 队列压满，第一次 drawModel 可能长时间不返回。
+  canvas.width = 800;
+  canvas.height = 900;
+  T.canvas = { w: canvas.width, h: canvas.height };
+  const t0 = performance.now();
+  const url = new URLSearchParams(location.search).get('m') || '/assets/models/whitecat/sdwhite cat free.model3.json';
+  let model;
+  try {
+    model = await loader.loadFromUrl(url, { canvas });
+  } catch (e) {
+    bad('loadFromUrl 失败：' + String(e && e.message || e));
+    log('stack: ' + String(e && e.stack || '').split('\n').slice(0, 6).join(' | '));
+    throw e;
+  }
+  T.loadMs = Math.round(performance.now() - t0);
+  ok(`模型载入 ${model.name} ${T.loadMs}ms · 部件=${model.paramCount}参数 · canvas=${model.canvasWidth}×${model.canvasHeight}`);
+
+  // ④ 跑帧 + 读像素
+  // 用 setInterval 驱动而不是 await 循环：await 循环在页面里被中断过一次
+  // （跑到第 2 帧就没再继续），定时器驱动更稳、也便于外部观察进度。
+  T.step = 'render';
+  window.__dhDrawStats = { count: 0, lastMs: 0, maxMs: 0 };
+  let bestPixels = 0;
+  let bestCoverage = 0;
+  T.frames = 0;
+
+  const probeCanvas = document.createElement('canvas');
+  probeCanvas.width = 200;
+  probeCanvas.height = 200;
+  const probeCtx = probeCanvas.getContext('2d');
+
+  const timer = setInterval(() => {
+    try {
+      const t1 = performance.now();
+      model.update(1 / 60);
+      const used = Math.round(performance.now() - t1);
+      T.frames++;
+      T.lastUpdateMs = used;
+      T.maxUpdateMs = Math.max(T.maxUpdateMs || 0, used);
+      if (T.frames <= 3) log(`· 第 ${T.frames} 帧 update ${used}ms`);
+      if (used > 100) log(`· 第 ${T.frames} 帧异常耗时 ${used}ms（卡在这一帧）`);
+    } catch (e) {
+      clearInterval(timer);
+      bad('第 ' + T.frames + ' 帧 update 失败：' + String(e && e.message || e));
+      log('stack: ' + String(e && e.stack || '').split('\n').slice(0, 8).join(' | '));
+      T.step = 'error';
+      return;
+    }
+
+    // 像素自检只做一次（最后一帧）、且只读小块：
+    // drawImage/getImageData 每帧读 WebGL 画布会同步等待 GPU，反而把循环拖死。
+    if (T.frames >= 60) {
+      clearInterval(timer);
+      try {
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const sw = 120, sh = 120;
+        const px = new Uint8Array(sw * sh * 4);
+        gl.readPixels(
+          Math.floor((canvas.width - sw) / 2),
+          Math.floor((canvas.height - sh) / 2),
+          sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, px,
+        );
+        let vis = 0;
+        for (let k = 3; k < px.length; k += 4) if (px[k] > 8) vis++;
+        T.bestPixels = vis;
+        T.coverage = +(vis / (sw * sh)).toFixed(3);
+        T.glError = gl.getError();
+      } catch (e) {
+        T.probeError = String(e && e.message || e);
+      }
+      T.step = 'done';
+      if (T.bestPixels > 100) ok(`官方 Framework 渲染成功：中心 ${T.bestPixels}/${120 * 120} 个非透明像素，glError=${T.glError}`);
+      else bad(`画面仍然没有像素（${T.bestPixels}）probeError=${T.probeError || 'none'}`);
+      log('<span class="ok">== 验证结束 ==</span>');
+    }
+  }, 16);
+
+  T.model = model;
+} catch (e) {
+  T.step = 'error';
+  T.fatal = String(e && e.message || e);
+  T.stack = String(e && e.stack || '').slice(0, 800);
+  bad('致命错误：' + T.fatal);
+}
+</script>
+</body>
+</html>
