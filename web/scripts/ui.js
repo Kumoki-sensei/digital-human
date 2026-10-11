@@ -928,6 +928,15 @@ function initAvatarPanel() {
     });
   }
 
+  const chkBarge = $('#chk-bargein');
+  if (chkBarge) {
+    chkBarge.checked = getIn('voiceInput.bargeIn', true);
+    chkBarge.addEventListener('change', () => {
+      setIn('voiceInput.bargeIn', chkBarge.checked);
+      emit('ui:vad-option', { key: 'bargeIn', value: chkBarge.checked });
+    });
+  }
+
   const chkLip = $('#chk-lipsync');
   chkLip.checked = c.lipsync;
   chkLip.addEventListener('change', () => emit('ui:avatar-option', { key: 'lipsync', value: chkLip.checked }));
@@ -949,6 +958,24 @@ function initAvatarPanel() {
   rngEmotion.addEventListener('input', () => emit('ui:avatar-option', { key: 'emotionGain', value: Number(rngEmotion.value) }));
 
   initModelImport();
+}
+
+/**
+ * 把 VAD 的输入控件按当前配置重新同步一遍。
+ *
+ * 配置有可能被程序改动而不是被用户点击（例如「打断安全阀」检出扬声器回声自触发，
+ * 主动把 voiceInput.bargeIn 改成 false）。那种情况下控件还显示着旧值，
+ * 用户会看到「勾着但没生效」—— 这个函数就是用来消掉这种不一致的。
+ */
+export function syncVadInputs() {
+  const chkAuto = $('#chk-auto-vad');
+  if (chkAuto) chkAuto.checked = getIn('voiceInput.auto', true);
+  const chkBarge = $('#chk-bargein');
+  if (chkBarge) chkBarge.checked = getIn('voiceInput.bargeIn', true);
+  const rngThr = $('#rng-vad-threshold');
+  if (rngThr) rngThr.value = getIn('voiceInput.thresholdFactor', 3.2);
+  const rngSil = $('#rng-vad-silence');
+  if (rngSil) rngSil.value = getIn('voiceInput.silenceMs', 900);
 }
 
 /* ================================================================
@@ -1875,8 +1902,8 @@ export async function teardown() {
 const VAD_HISTORY = 260;
 const vadLevels = [];   // 最近若干帧的 { level, thr }
 
-export function pushVadLevel({ level, threshold, isSpeech }) {
-  vadLevels.push({ level, thr: threshold, isSpeech });
+export function pushVadLevel({ level, threshold, isSpeech, bargeInThreshold, suppressed }) {
+  vadLevels.push({ level, thr: threshold, isSpeech, thr2: bargeInThreshold, suppressed });
   if (vadLevels.length > VAD_HISTORY) vadLevels.shift();
 }
 
@@ -1915,11 +1942,16 @@ export function drawVadMeter(active, listening) {
   const yOf = (v) => h - Math.min(1, v / FULL) * (h - 4) - 2;
   const startIdx = VAD_HISTORY - vadLevels.length;
 
-  // 说话区间用底色标出，一眼看出切分点
+  // 说话区间用底色标出，一眼看出切分点；她说话期间判定被冻结，换个颜色区分
   for (let i = 0; i < vadLevels.length; i++) {
-    if (!vadLevels[i].isSpeech) continue;
-    ctx.fillStyle = 'rgba(53,200,138,0.10)';
-    ctx.fillRect((startIdx + i) * stepX, 0, stepX + 1, h);
+    const s = vadLevels[i];
+    if (s.suppressed) {
+      ctx.fillStyle = 'rgba(242,177,61,0.10)';
+      ctx.fillRect((startIdx + i) * stepX, 0, stepX + 1, h);
+    } else if (s.isSpeech) {
+      ctx.fillStyle = 'rgba(53,200,138,0.10)';
+      ctx.fillRect((startIdx + i) * stepX, 0, stepX + 1, h);
+    }
   }
 
   // 阈值线
@@ -1932,6 +1964,24 @@ export function drawVadMeter(active, listening) {
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
+
+  // 打断阈值（虚线）：能量要越过这条线才有可能触发打断。
+  // 它通常明显高于上面的实线（普通阈值），因为还要先扣掉扬声器泄漏那一部分。
+  // 调「允许打断」时先看这条线 —— 你的声音够不够得到它，一眼就能判断阈值是否偏高。
+  if (vadLevels.some((s) => typeof s.thr2 === 'number')) {
+    ctx.save();
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    ctx.strokeStyle = 'rgba(242,177,61,0.45)';
+    ctx.lineWidth = Math.max(1, dpr);
+    ctx.beginPath();
+    vadLevels.forEach((s, i) => {
+      const x = (startIdx + i) * stepX;
+      const y = yOf(s.thr2 ?? s.thr);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // 能量曲线
   ctx.strokeStyle = 'rgba(108,140,255,0.95)';

@@ -495,9 +495,15 @@
                 </div>
                 <label class="range">灵敏度（阈值倍数） <input type="range" id="rng-vad-threshold" min="1.5" max="8" step="0.1" value="3.2" /></label>
                 <label class="range">说完判定时长 <input type="range" id="rng-vad-silence" min="400" max="2500" step="50" value="900" /></label>
+                <label class="switch"><input type="checkbox" id="chk-bargein" checked /><span>允许打断（她说话时你一开口，她就停下听）</span></label>
                 <p class="note">
                   自动断句用 AudioWorklet 取原始采样、按能量判定句尾：静音持续到设定时长就认为你说完了。
                   环境嘈杂时调低灵敏度、拉长判定时长。
+                </p>
+                <p class="note">
+                  <b>允许打断</b>：她在说话时，只要检测到明确的说话声就立刻停下（电平表上的<b>橙色实线</b>是
+                  普通阈值，<b>虚线</b>是播放期间的打断阈值）。如果你发现她莫名其妙自己停下，
+                  多半是扬声器的声音串回了麦克风 —— 把这一项关掉即可。
                 </p>
 
                 <div class="row">

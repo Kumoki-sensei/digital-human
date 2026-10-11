@@ -18,6 +18,11 @@
  *   silence ──能量超阈值──▶ speaking ──静音达 silenceMs──▶ (触发 onUtterance)
  *      ▲                                                │
  *      └──────────────── 缓冲清空 / 继续监听 ◀───────────┘
+ *
+ * 打断（barge-in）：她说话期间主状态机被冻结（这是防自问自答的必要条件），
+ * 但会另跑一套**受限探测** —— 见 _probeBargeIn。探测成立时返回 BARGE_IN 并触发
+ * onBargeIn，由调用方去掐掉播放；用户已经说出口的那一段会被记下（_seedSpeechMs），
+ * 等冻结解除后交回主状态机，所以开口的第一个字不会被吞掉。
  */
 
 /** 一帧的判定结果 */
@@ -28,6 +33,7 @@ export const VAD_EVENT = {
   SPEECH_END: 'end',    // 说完了（静音持续够久）
   TOO_SHORT: 'short',   // 静音了但语音太短 —— 当作噪声丢弃
   TOO_LONG: 'long',     // 超过最长时长，强制收尾
+  BARGE_IN: 'bargein',  // 她正在说话时检测到用户开口 —— 应当立刻打断她
 };
 
 export const VAD_DEFAULTS = {
@@ -47,6 +53,26 @@ export const VAD_DEFAULTS = {
   minUtteranceMs: 350,
   /** 最长一句（毫秒），到点强制收尾，避免无限录音 */
   maxUtteranceMs: 15000,
+
+  /* ---------------- 打断（barge-in）----------------
+   * 「她说话时冻结判定」是防自问自答用的，但它有个副作用：
+   * 用户在她说的时候开口，检测不到 → 必须等她说完整段。
+   * 下面这几个参数是「播放期间仍然允许被打断」的代价与边界。
+   */
+  /** 播放期间是否允许打断。关掉 = 退回旧行为（播放期间完全冻结） */
+  bargeInEnabled: true,
+  /** 播放期间的打断阈值 = 普通阈值 × 该倍数。越大越难打断，也越不容易被扬声器回声误触 */
+  bargeInFactor: 2.5,
+  /** 播放刚开始的这段（毫秒）不判定打断 —— 她自己的声音正在爬坡，起音会被当成用户开口。
+   *  这段里观测到的电平会被记成「回声基线」，见 bargeInRiseFactor */
+  bargeInGraceMs: 600,
+  /** 用户电平必须比「回声基线」高出该倍数，才认作真人在说话。
+   *  这条是无回声消除时的兜底：扬声器漏进麦克风的能量会被算进基线，单靠它无法触发打断 */
+  bargeInRiseFactor: 1.8,
+  /** 播放期间要连续多久的人声才算打断（毫秒）。比 minSpeechMs 长，挡咳嗽与爆音 */
+  bargeInMinSpeechMs: 320,
+  /** 两次打断之间的最小间隔（毫秒）。防扬声器回声把她打断成死循环 */
+  bargeInCooldownMs: 1200,
 };
 
 /** RMS 能量。无分配，可每帧调用。 */
@@ -92,6 +118,41 @@ export class VAD {
      * 播放期间冻结判定，是这件事最简单可靠的解法。
      */
     this.suppressed = null;
+    /** 打断回调：播放期间检测到用户明确开口时触发 */
+    this.onBargeIn = null;
+
+    /* ---- 打断探测的独立状态（不参与主状态机） ---- */
+    /** 探测累计的人声时长 */
+    this._probeSpeechMs = 0;
+    /** 上一帧是否已超打断阈值 —— 用来要求「起音」，见 _probeBargeIn */
+    this._probeAbove = false;
+    /** 最近一次触发打断的时刻（totalMs），配合冷却用 */
+    this._lastBargeInMs = -Infinity;
+    /** 本次抑制的起始时刻（null = 当前未被抑制） */
+    this._suppressStartMs = null;
+    /** 播放前段观测到的「回声基线」：扬声器漏进麦克风的能量水平 */
+    this._echoPeak = 0;
+    /** 触发过打断后的闩锁：电平没落回阈值以下之前不再触发 */
+    this._bargeInLatched = false;
+    /** 打断成立后待接管的一段时长：等抑制解除，把它交回主状态机，别丢掉开口 */
+    this._seedSpeechMs = 0;
+  }
+
+  /**
+   * 播放期间的打断阈值（比普通阈值高，避免扬声器回声误触）。
+   * 电平表把它画成第二条线 —— 不打断了要能看出是不是阈值太高。
+   */
+  get bargeInThreshold() {
+    return this.threshold * this.cfg.bargeInFactor;
+  }
+
+  /**
+   * 这一帧的音频要不要留（拼进 WAV）。
+   * 主状态机在说话中、打断探测进行中、或有待接管的一段，都要留。
+   */
+  get shouldKeepAudio() {
+    return this.state === 'speaking' || this.speechMs > 0
+      || this._probeSpeechMs > 0 || this._seedSpeechMs > 0;
   }
 
   /** 当前判定阈值（调试/可视化用） */
@@ -117,6 +178,13 @@ export class VAD {
     this.utteranceMs = 0;
     this.totalMs = 0;
     this._lastLevel = 0;
+    this._probeSpeechMs = 0;
+    this._probeAbove = false;
+    this._lastBargeInMs = -Infinity;
+    this._suppressStartMs = null;
+    this._echoPeak = 0;
+    this._bargeInLatched = false;
+    this._seedSpeechMs = 0;
   }
 
   _setState(next) {
@@ -139,26 +207,50 @@ export class VAD {
     const thr = this.threshold;
     const isSpeech = level > thr;
 
-    try { this.onLevel?.({ level, threshold: thr, isSpeech, state: this.state, totalMs: this.totalMs }); }
-    catch { /* 同上 */ }
-
-    // 被抑制（数字人正在说话）：只报电平，不推进状态机 ——
-    // 否则它自己的声音会被当成用户开口，出现自问自答。
+    // 先算抑制状态：电平表要据此画「打断阈值」那条线
     let suppressed = false;
     try { suppressed = !!this.suppressed?.(); } catch { suppressed = false; }
+    if (!suppressed) this._suppressStartMs = null;
+
+    try {
+      this.onLevel?.({
+        level, threshold: thr, isSpeech, state: this.state, totalMs: this.totalMs,
+        suppressed, bargeInThreshold: this.bargeInThreshold,
+      });
+    } catch { /* 同上 */ }
+
+    // ---- 她在说话：冻结主状态机，但跑受限的打断探测 ----
+    //
+    // 旧行为是「完全冻结判定」：能防住自问自答，但副作用是用户在她说的时候开口
+    // 也检测不到，必须等她说完整段 —— 那就等于没有打断。现在改成：
+    // 主状态机照旧冻结，但跑一套受限探测，只有「明确的人声起音 + 够响 + 够长」才触发。
     if (suppressed) {
+      if (this._suppressStartMs === null) {
+        // 一次播放 = 一次新的回声基线
+        this._suppressStartMs = this.totalMs;
+        this._echoPeak = 0;
+      }
       if (this.state === 'speaking') {
-        // 说话期间被抑制：把这一句作废，避免半句被送出
+        // 播放开始时还在录的那一句作废，避免半句被送出
         this._resetCounters();
         this._setState('silence');
-        // 抑制期间同样要估计噪声底：扬声器的声音对 VAD 来说就是「环境噪声」。
-        // 不更新的话，解除抑制后会带着一段过时的噪声底，阈值要么太高听不见用户、
-        // 要么太低把底噪当说话 —— 这个坑是测试用例抓出来的。
-        this._adaptNoise(level * 0.5);   // 打折适应：宁可慢一点，也别把音乐当成底噪
       }
       this.speechMs = 0;
       this.silenceRunMs = 0;
-      return VAD_EVENT.SILENCE;
+      return this._probeBargeIn(level, frameMs);
+    }
+
+    // ---- 抑制刚解除，且刚刚发生过打断 ----
+    // 把用户已经说出口的那一段交回主状态机。不这么做的话，那 300 多毫秒等于白说，
+    // 用户还得再攒够 minSpeechMs 才算开口，第一个字就被吞掉了。
+    if (this._seedSpeechMs > 0) {
+      const seeded = this._seedSpeechMs;
+      this._seedSpeechMs = 0;
+      this._resetCounters();
+      this.speechMs = seeded;
+      this.utteranceMs = seeded;
+      this._setState('speaking');
+      return VAD_EVENT.SPEECH_START;
     }
 
     if (isSpeech) {
@@ -201,6 +293,89 @@ export class VAD {
     }
 
     return VAD_EVENT.SPEECH;
+  }
+
+  /**
+   * 播放期间的「打断探测」。返回 BARGE_IN 表示应当立刻掐掉她的播放。
+   *
+   * 为什么不能简单地把阈值调高了事：扬声器的声音会顺着麦克风回来。如果回声消除
+   * （getUserMedia 的 echoCancellation）有效，残留很小，人声很容易区分；如果无效，
+   * 回声能量和被他自己说话的能量是同一个量级 —— 单靠一个固定阈值无法区分。
+   *
+   * 所以这里用三条互相独立的约束，任何一条单独被回声骗过都不够：
+   *   1. **回声基线**：播放前段（grace）只观测不判定，把观测到的峰值当作「回声有多大」。
+   *      之后要求人声比这个基线再高 riseFactor 倍 —— 这条管没有回声消除的情况。
+   *   2. **要求起音**：必须从「低于阈值」跨到「高于阈值」才算开口。持续存在的回声
+   *      永远凑不出第二个起音。这条管回声恰好高于固定阈值的情况。
+   *   3. **够长**：要连续 bargeInMinSpeechMs 才成立，挡掉咳嗽、碰麦、爆音。
+   *
+   * 另外：超过阈值的帧不参与噪声底估计（那是人声，不是环境噪声），
+   * 否则用户越说她阈值越高，最后怎么喊都打不断。
+   */
+  _probeBargeIn(level, frameMs) {
+    // ---- 1. 播放前段：只记回声基线，不判定 ----
+    if (this.totalMs - this._suppressStartMs < this.cfg.bargeInGraceMs) {
+      this._echoPeak = Math.max(this._echoPeak, level);
+      this._probeSpeechMs = 0;
+      this._probeAbove = false;
+      return VAD_EVENT.SILENCE;
+    }
+
+    // 关掉打断 = 退回旧行为：播放期间完全冻结判定，但仍然估计噪声底。
+    // 不估计的话，解除抑制后会带着一段过时的噪声底，阈值要么太高听不见用户、
+    // 要么太低把底噪当说话 —— 这个坑是测试用例抓出来的。
+    if (!this.cfg.bargeInEnabled) {
+      this._adaptNoise(level * 0.5);   // 打折适应：宁可慢一点，也别把音乐当成底噪
+      this._probeSpeechMs = 0;
+      this._probeAbove = false;
+      return VAD_EVENT.SILENCE;
+    }
+
+    const thr = Math.max(
+      this.bargeInThreshold,
+      this._echoPeak * this.cfg.bargeInRiseFactor,
+    );
+    const above = level > thr;
+
+    if (!above) this._adaptNoise(level * 0.5);
+
+    // 触发后先上锁：必须看到电平掉回阈值以下（出现一个安静的间隙）才允许再次触发。
+    // 只靠冷却期不够 —— 冷却结束时若同一段人声还在继续，会被再判一次打断，
+    // 把待接管的那一段反复重置（这个坑是离线断言抓出来的）。
+    if (this._bargeInLatched) {
+      if (!above) this._bargeInLatched = false;
+      this._probeSpeechMs = 0;
+      this._probeAbove = above;
+      return VAD_EVENT.SILENCE;
+    }
+
+    // 冷却期内不重复触发（扬声器回声最可能在这里二次误触）
+    if (this.totalMs - this._lastBargeInMs < this.cfg.bargeInCooldownMs) {
+      this._probeSpeechMs = 0;
+      this._probeAbove = above;
+      return VAD_EVENT.SILENCE;
+    }
+
+    if (above && !this._probeAbove) {
+      this._probeSpeechMs = frameMs;        // 起音：重新开始计时
+    } else if (above) {
+      this._probeSpeechMs += frameMs;
+    } else {
+      this._probeSpeechMs = 0;
+    }
+    this._probeAbove = above;
+
+    if (this._probeSpeechMs < this.cfg.bargeInMinSpeechMs) return VAD_EVENT.SILENCE;
+
+    // ---- 成立 ----
+    const ms = this._probeSpeechMs;
+    this._probeSpeechMs = 0;
+    this._probeAbove = false;
+    this._lastBargeInMs = this.totalMs;
+    this._bargeInLatched = true;   // 等电平落回阈值以下再解锁
+    this._seedSpeechMs = ms;       // 待接管：抑制一解除就交回主状态机，别丢开口
+    try { this.onBargeIn?.({ ms, level, threshold: thr }); } catch { /* 外部回调不能带崩检测 */ }
+    return VAD_EVENT.BARGE_IN;
   }
 
   _finish(durationMs, reason) {
@@ -311,8 +486,14 @@ export class AutoRecorder {
     this.active = false;
     this.sampleRate = 48000;
     this._frameMs = 0;
+    /** 打断回调：播放期间用户开口时触发，由调用方去掐掉播放 */
+    this.onBargeIn = null;
 
     this.vad.onUtterance = ({ durationMs, reason }) => this._emit(durationMs, reason);
+    this.vad.onBargeIn = (info) => {
+      try { this.onBargeIn?.(info); }
+      catch (e) { console.warn('[vad] onBargeIn 回调抛错：', e); }
+    };
   }
 
   static get supported() {
@@ -380,10 +561,14 @@ export class AutoRecorder {
     const samples = frame instanceof Float32Array ? frame : new Float32Array(frame);
     if (!this._frameMs) this._frameMs = (samples.length / this.sampleRate) * 1000;
 
-    // 只在「已开始说话」之后才留数据，否则句首会拖一大段静音
-    if (this.state === 'speaking' || this.vad.state === 'speaking' || this.vad.speechMs > 0) this.chunks.push(samples);
+    // 只在她「已经在说话」之后才留数据，否则句首会拖一大段静音。
+    // 判定交给 VAD 自己（shouldKeepAudio 把打断探测也算了进去），这里不再猜它的内部字段。
+    if (this.vad.shouldKeepAudio) this.chunks.push(samples);
 
     this.vad.push(samples, this._frameMs);
+
+    // 探测没成立（只是杂音、回声、咳嗽）：把刚攒下的探测数据丢掉，不要留给下一句
+    if (!this.vad.shouldKeepAudio) this.chunks.length = 0;
   }
 
   _emit(durationMs, reason) {
@@ -398,7 +583,9 @@ export class AutoRecorder {
   /** 手动收尾（用户点停止）。 */
   stop() {
     const emitted = this.vad.flush();
-    if (!emitted) this._emit(this.vad.utteranceMs, 'manual');
+    // flush 返回 false = 本来就没在说、或这句太短被丢弃 —— 那就什么都不发。
+    // 之前这里会回退到 _emit，把本该丢弃的短音频也送出去。
+    if (!emitted) this.chunks = [];
     return emitted;
   }
 

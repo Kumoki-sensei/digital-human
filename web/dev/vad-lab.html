@@ -277,6 +277,91 @@
               vad.noise < 0.05, `noise=${vad.noise.toFixed(4)} thr=${vad.threshold.toFixed(4)}`);
       }
 
+      lines.push('【11】播放期间允许打断：明确的开口应当把她掐掉');
+      {
+        // 回声消除有效的情形：播放期间麦克风里只有很低的残留，用户一开口就明显高于它。
+        // 旧实现把播放期整个冻结，所以这一条以前是做不到的 —— 用户必须等她说完整段。
+        const frames = makeSpeech({ segments: [
+          { ms: 800, speech: false },      // 回声消除后的残留
+          { ms: 1200, speech: true },      // 用户开口（此时她还在说）
+          { ms: 800, speech: true },       // 播放已被掐掉，继续说
+          { ms: 1400, speech: false },     // 收尾
+        ]});
+        const vad = new VAD();
+        const barges = [], utts = [];
+        let starts = 0;
+        vad.onBargeIn = (i) => barges.push(i);
+        vad.onUtterance = (i) => utts.push(i);
+        const muteUntil = Math.round(2000 / 10.66);
+        for (let i = 0; i < frames.length; i++) {
+          const mute = i < muteUntil;
+          vad.suppressed = () => mute;
+          if (vad.push(frames[i], 10.66) === VAD_EVENT.SPEECH_START) starts++;
+        }
+        check('触发 1 次打断', barges.length === 1, `实得 ${barges.length}`);
+        check('打断时已累计约 320ms 人声', barges[0] && barges[0].ms >= 300,
+              barges[0] ? `ms=${barges[0].ms}` : 'none');
+        check('开口被接管，不再是被完全冻结（出现 SPEECH_START）', starts >= 1, `实得 ${starts}`);
+        check('切出 1 句，且包含被打断前已经说出口的那一段',
+              utts.length === 1 && utts[0].durationMs > 1000,
+              utts[0] ? `${utts.length} 句 / ${utts[0].durationMs}ms` : `实得 ${utts.length} 句`);
+      }
+
+      lines.push('【12】没有回声消除时，不得自己把自己打断（持续泄漏）');
+      {
+        // 扬声器的声音原样串回麦克风：能量一直很高，但**没有起音**。
+        // 这种「持续泄漏」绝不能触发打断，否则她会说半句就把自己掐掉。
+        const frames = makeSpeech({ segments: [{ ms: 6000, speech: true }] });
+        const vad = new VAD();
+        const barges = [], utts = [];
+        vad.onBargeIn = (i) => barges.push(i);
+        vad.onUtterance = (i) => utts.push(i);
+        vad.suppressed = () => true;
+        for (const f of frames) vad.push(f, 10.66);
+        check('0 次打断', barges.length === 0, `实得 ${barges.length}`);
+        check('0 句子被送出', utts.length === 0, `实得 ${utts.length}`);
+      }
+
+      lines.push('【13】关掉「允许打断」应退回完全冻结（旧行为）');
+      {
+        const frames = makeSpeech({ segments: [{ ms: 4000, speech: true }] });
+        const vad = new VAD({ bargeInEnabled: false });
+        const barges = [], utts = [];
+        vad.onBargeIn = (i) => barges.push(i);
+        vad.onUtterance = (i) => utts.push(i);
+        vad.suppressed = () => true;
+        for (const f of frames) vad.push(f, 10.66);
+        check('0 次打断', barges.length === 0, `实得 ${barges.length}`);
+        check('0 句子被送出', utts.length === 0, `实得 ${utts.length}`);
+      }
+
+      lines.push('【14】闩锁与冷却期：同一段连续人声只打断一次');
+      {
+        const long = makeSpeech({ segments: [
+          { ms: 800, speech: false }, { ms: 2500, speech: true }, { ms: 400, speech: false },
+        ]});
+        const vad = new VAD();
+        const barges = [];
+        vad.onBargeIn = (i) => barges.push(i);
+        vad.suppressed = () => true;
+        for (const f of long) vad.push(f, 10.66);
+        check('一段连续人声只触发 1 次', barges.length === 1, `实得 ${barges.length}`);
+
+        // 触发后紧跟「200ms 静音 + 400ms 短促人声」，落在 1.2s 冷却期内 → 不应二次触发。
+        // 只靠冷却期不够：冷却结束时若同一段人声还在继续，会被再判一次（闩锁就是补这个）。
+        const blip = makeSpeech({ segments: [
+          { ms: 800, speech: false }, { ms: 1000, speech: true },
+          { ms: 200, speech: false }, { ms: 400, speech: true },
+          { ms: 400, speech: false },
+        ]});
+        const vad2 = new VAD();
+        const barges2 = [];
+        vad2.onBargeIn = (i) => barges2.push(i);
+        vad2.suppressed = () => true;
+        for (const f of blip) vad2.push(f, 10.66);
+        check('冷却期内的二次起音不触发', barges2.length === 1, `实得 ${barges2.length}`);
+      }
+
       lines.push(`\n结果：${pass} 通过 / ${fail} 失败`);      out.textContent = lines.join('\n');
       summary.textContent = fail === 0 ? `全部通过（${pass}）` : `${fail} 项失败`;
       summary.className = 'pill ' + (fail === 0 ? 'ok' : 'bad');

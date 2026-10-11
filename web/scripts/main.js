@@ -39,6 +39,13 @@ let autoListening = false;
 /** 每隔几帧重画一次电平表（每帧都画太浪费，人眼也看不出差别） */
 let vadDrawTick = 0;
 
+/* 打断的安全阀：窗口内触发次数超过上限就认定「扬声器回声自触发」，自动关掉打断。
+ * 参数只在本地用，不需要暴露给用户 —— 它要挡的是死循环，不是给用户调的。 */
+const BARGE_IN_WINDOW_MS = 10000;
+const BARGE_IN_MAX_HITS = 4;
+let bargeInHits = 0;
+let bargeInWindowStart = 0;
+
 /* ================================================================
    启动
    ================================================================ */
@@ -313,6 +320,11 @@ function wireBus() {
     // 参数改动实时生效：VAD 实例持着 cfg，直接改就行（下一帧判定就用新值）
     if (key === 'thresholdFactor' && autoRecorder) autoRecorder.vad.cfg.thresholdFactor = value;
     if (key === 'silenceMs' && autoRecorder) autoRecorder.vad.cfg.silenceMs = value;
+    if (key === 'bargeIn' && autoRecorder) {
+      autoRecorder.vad.cfg.bargeInEnabled = value;
+      bargeInHits = 0;                 // 手动开关过就重置安全阀计数
+      bargeInWindowStart = performance.now();
+    }
     if (key === 'auto' && !value) stopAutoListening({ silent: true });
   });
 
@@ -497,11 +509,21 @@ async function toggleMic() {
    自动听（说一句自动发一句，不用再点麦克风）
    ================================================================ */
 
-/** 开一句就打断它自己 —— 用户开口时数字人必须先闭嘴。 */
+/**
+ * 用户开口，她必须先闭嘴 —— 真正的 barge-in。
+ *
+ * 触发来源是 VAD 的**打断探测**（`vad.js` 的 `_probeBargeIn`），不是按钮：
+ * 她正在说话时，只要检测到用户明确开口就走到这里。
+ *
+ * 早先这个函数只有定义、没有任何调用方（roadmap 里那句「已接好」是错的），
+ * 而且判定层把播放期间整个冻结了 —— 两条加起来就是「自动模式下根本没有打断」。
+ */
 function interruptSpeakingFor() {
-  if (speaker.busy) speaker.stopAll();
-  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-  UI.setStopVisible(false);
+  // interrupt() 已经做了四件事：停本地播放、取消 speechSynthesis、
+  // 通知后端 cancel 本轮、隐藏「停」按钮。这里不重复实现，避免两处逻辑走偏。
+  interrupt({ silent: true });
+  UI.setStatus('listening', '聆听中');
+  UI.setVadInfo('检测到你开口，已打断', 'listening');
 }
 
 async function startAutoListening() {
@@ -513,18 +535,48 @@ async function startAutoListening() {
   try {
     autoRecorder = new AutoRecorder({
       workletUrl: 'scripts/mic-worklet.js',
-      vadOptions: { thresholdFactor, silenceMs, minUtteranceMs: 350, maxUtteranceMs: 15000 },
+      vadOptions: {
+        thresholdFactor, silenceMs, minUtteranceMs: 350, maxUtteranceMs: 15000,
+        // 「允许打断」：播放期间仍检测用户开口（详见 vad.js 的 _probeBargeIn）
+        bargeInEnabled: getIn('voiceInput.bargeIn', true),
+      },
     });
   } catch (e) {
     return UI.toast(`自动断句不可用：${e.message}`, 'err', 5000);
   }
 
-  // 数字人在说话时冻结判定：否则它自己的声音会被当成用户输入（自问自答）
+  // 数字人在说话时冻结主状态机判定：否则它自己的声音会被当成用户输入（自问自答）
   autoRecorder.vad.suppressed = () => speaker.busy;
 
   autoRecorder.vad.onLevel = (info) => emit('vad:level', info);
   autoRecorder.vad.onState = (state) => emit('vad:state', { state });
   autoRecorder.onUtterance = (info) => handleAutoUtterance(info);
+
+  // ---- 打断 + 安全阀 ----
+  // 没有回声消除的设备上，她自己的声音会顺着麦克风回来，可能把自己打断。
+  // 短时间内连续多次触发 = 大概率是自触发 → 自动关掉「允许打断」并说明原因，
+  // 而不是让她陷入「说半句就被自己打断」的死循环。
+  bargeInHits = 0;
+  bargeInWindowStart = performance.now();
+  autoRecorder.onBargeIn = () => {
+    const now = performance.now();
+    if (now - bargeInWindowStart > BARGE_IN_WINDOW_MS) {
+      bargeInWindowStart = now;
+      bargeInHits = 0;
+    }
+    bargeInHits++;
+    if (bargeInHits > BARGE_IN_MAX_HITS) {
+      autoRecorder.vad.cfg.bargeInEnabled = false;
+      setIn('voiceInput.bargeIn', false);
+      UI.syncVadInputs();
+      UI.toast(
+        '短时间内多次打断，像是扬声器回声造成的，已自动关闭「允许打断」。'
+        + '可在 设置 → 形象 → 语音采集 里重新打开。', 'warn', 8000,
+      );
+      return;
+    }
+    interruptSpeakingFor();
+  };
 
   try {
     await autoRecorder.start();
